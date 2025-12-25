@@ -15,6 +15,7 @@ pthread_mutex_t g_posts_mutex = PTHREAD_MUTEX_INITIALIZER;
 pthread_mutex_t g_chats_mutex = PTHREAD_MUTEX_INITIALIZER;
 pthread_mutex_t g_groups_mutex = PTHREAD_MUTEX_INITIALIZER;
 pthread_mutex_t g_groupmembers_mutex = PTHREAD_MUTEX_INITIALIZER;
+pthread_mutex_t g_groupmessages_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 const char* generateOutput(const char* buffer)
 {
@@ -1739,19 +1740,149 @@ const char* groupsCommand(int* client_id)
     }
 }
 
-const char* groupchatCommand(int* client_id)
+const char* groupchatCommand(const char* groupname, const char* message, int* client_id)
 {
-    pthread_mutex_lock(&g_chats_mutex);
+    if (*client_id == LOGGED_OUT)
+        return NOT_LOGGED;
+    
+    char* endptr;
+    int rc;
+    int groupID = strtol(groupname, &endptr, 10);
 
-    if (*client_id != LOGGED_OUT)
+    if (*endptr != '\0') // userul a dat un groupname nu un id si facem rost de id dupa groupname
     {
-        pthread_mutex_unlock(&g_chats_mutex);
-        return generateOutput("GROUPCHAT_COMMAND");
+        groupID = groupnameToId(groupname, client_id);
+        if (groupID == -1)
+            return KICK_GROUPNOTEXIST;
+        else if (groupID == -2)
+            return SQL_ERROR;
     }
     else
     {
-        pthread_mutex_unlock(&g_chats_mutex);
+        if (!groupExists(groupID))
+            return KICK_GROUPNOTEXIST;
+    }
+
+    if (!isUserInGroup(*client_id, groupID))
+        return KICK_FAILED;
+    
+    sqlite3_stmt* stmt;
+    printf("[server] before prepare\n");
+    const char* sql_insert = "INSERT into group_messages (sender_id, group_id, message) VALUES (?, ?, ?)";
+    rc = sqlite3_prepare_v2(db, sql_insert, -1, &stmt, 0);
+    if (rc != SQLITE_OK)
+    {
+        printf("[server] Eroare sql_prepare()\n");
+        return SQL_ERROR;
+    }
+    printf("[server] after prepare\n");
+
+    sqlite3_bind_int(stmt, 1, *client_id);
+    sqlite3_bind_int(stmt, 2, groupID);
+    sqlite3_bind_text(stmt, 3, message, -1, SQLITE_STATIC);
+
+    pthread_mutex_lock(&g_groupmessages_mutex);
+
+    rc = sqlite3_step(stmt);
+    sqlite3_finalize(stmt);
+
+    pthread_mutex_unlock(&g_groupmessages_mutex);
+
+    if (rc == SQLITE_DONE)
+        return CHAT_SUCCESS;
+    else
+    {
+        printf("[server] Eroare sqlite3_step() la post\n");
+        return SQL_ERROR;
+    }
+}
+
+const char* showgroupchatCommand(const char* groupname, int* client_id)
+{
+    if (*client_id == LOGGED_OUT)
         return NOT_LOGGED;
+    
+    char* endptr;
+    int rc;
+    int groupID = strtol(groupname, &endptr, 10);
+
+    if (*endptr != '\0') // userul a dat un groupname nu un id si facem rost de id dupa groupname
+    {
+        groupID = groupnameToId(groupname, client_id);
+        if (groupID == -1)
+            return KICK_GROUPNOTEXIST;
+        else if (groupID == -2)
+            return SQL_ERROR;
+    }
+    else
+    {
+        if (!groupExists(groupID))
+            return KICK_GROUPNOTEXIST;
+    }
+
+    if (!isUserInGroup(*client_id, groupID))
+        return KICK_FAILED;
+    
+    sqlite3_stmt* stmt;
+    const char* sql_select = "SELECT u.id, u.username, gm.message, gm.created_at FROM group_messages gm "
+                                "JOIN groups g ON g.id = gm.group_id "
+                                "JOIN users u ON u.id = gm.sender_id "
+                                "WHERE g.id = ? "
+                                "ORDER BY gm.created_at ASC";
+    rc = sqlite3_prepare_v2(db, sql_select, -1, &stmt, 0);
+    if (rc != SQLITE_OK)
+    {
+        printf("[server] Eroare sql_prepare() la friends\n");
+        return SQL_ERROR;
+    }
+    sqlite3_bind_int(stmt, 1, groupID);
+
+    unsigned char* realGroupname = idToGroupname(groupID);
+    int initSize;
+    int chatsSize = initSize = sizeof(SHOWGROUPCHAT) + strlen(realGroupname) + 1;
+    char* chats = malloc(chatsSize);
+    strcpy(chats, SHOWGROUPCHAT);
+    strcat(strcat(strcpy(chats, SHOWGROUPCHAT), realGroupname), ":");
+
+    pthread_mutex_lock(&g_users_mutex);
+    pthread_mutex_lock(&g_groups_mutex);
+    pthread_mutex_lock(&g_groupmessages_mutex);
+
+    while ((rc = sqlite3_step(stmt)) == SQLITE_ROW)
+    {
+        int id = sqlite3_column_int(stmt, 0);
+        const unsigned char* username = sqlite3_column_text(stmt, 1);
+        const unsigned char* message = sqlite3_column_text(stmt, 2);
+        const unsigned char* created_at = sqlite3_column_text(stmt, 3);
+
+        char chat[BUFFER_SIZE];
+        snprintf(chat, sizeof(chat), "\n(%s) [%d] %s | %s", created_at, id, username, message);
+
+        chatsSize += strlen(chat);
+        chats = realloc(chats, chatsSize);
+        strcat(chats, chat);
+    }
+    sqlite3_finalize(stmt);
+    
+    pthread_mutex_unlock(&g_users_mutex);
+    pthread_mutex_unlock(&g_groups_mutex);
+    pthread_mutex_unlock(&g_groupmessages_mutex);
+
+    free(realGroupname);
+
+    if (chatsSize == initSize)
+    {
+        chats = realloc(chats, sizeof(CHATS_FAILED));
+        strcpy(chats, CHATS_FAILED);
+    }
+
+    if (rc == SQLITE_DONE)
+        return chats;
+    else
+    {
+        free(chats);
+        printf("[server] Eroare la sqlite3_step() la friends\n");
+        return SQL_ERROR;
     }
 }
 
@@ -1769,6 +1900,11 @@ const char* privacyCommand(int* client_id)
         pthread_mutex_unlock(&g_users_mutex);
         return NOT_LOGGED;
     }
+}
+
+const char* userCommand(int* client_id)
+{
+    return "WILLBE\n\n\n";
 }
 
 const char* banCommand(int* client_id)

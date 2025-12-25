@@ -449,11 +449,27 @@ const char* handleCommand(char** tokens, int* tokenCount, int* client_id)
     else if (strcmp(command, GROUPCHAT_COMMAND) == 0)
     {
         if (*tokenCount >= GROUPCHAT_ARGC)
-            return groupchatCommand(client_id);
+        {
+            const char* groupname = tokens[1];
+            const char* message = tokensToMessage(tokens, GROUPCHAT_ARGC, tokenCount);
+            return groupchatCommand(groupname, message, client_id);
+        }
         else if (*tokenCount == 0)
             return NO_ARGUMENTS;
         else if (*tokenCount < GROUPCHAT_ARGC)
             return LESS_ARGUMENTS;
+    }
+    else if (strcmp(command, SHOWGROUPCHAT_COMMAND) == 0)
+    {
+        if (*tokenCount == SHOWGROUPCHAT_ARGC)
+        {
+            const char* groupname = tokens[1];
+            return showgroupchatCommand(groupname, client_id);
+        }
+        else if (*tokenCount == 0)
+            return NO_ARGUMENTS;
+        else if (*tokenCount > SHOWGROUPCHAT_ARGC)
+            return MORE_ARGUMENTS;
     }
     else if (strcmp(command, PRIVACY_COMMAND) == 0)
     {
