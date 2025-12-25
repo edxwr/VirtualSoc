@@ -474,12 +474,20 @@ const char* handleCommand(char** tokens, int* tokenCount, int* client_id)
     else if (strcmp(command, PRIVACY_COMMAND) == 0)
     {
         if (*tokenCount == PRIVACY_ARGC)
-            return privacyCommand(client_id);
+        {
+            const char* type = tokens[1];
+            return privacyCommand(type, client_id);
+        }
         else if (*tokenCount == 0)
             return NO_ARGUMENTS;
-        else if (*tokenCount < PRIVACY_ARGC)
-            return LESS_ARGUMENTS;
         else if (*tokenCount > PRIVACY_ARGC)
+            return MORE_ARGUMENTS;
+    }
+    else if (strcmp(command, USER_COMMAND) == 0)
+    {
+        if (*tokenCount == USER_ARGC)
+            return userCommand(client_id);
+        else if (*tokenCount > USER_ARGC)
             return MORE_ARGUMENTS;
     }
     else if (strcmp(command, BAN_COMMAND) == 0)

@@ -954,19 +954,20 @@ const char* postsCommand(int* client_id)
     const char* sql_select;
     if (*client_id == LOGGED_OUT)
     {
-        //daca nu e logat, doar cele publice
-        sql_select = "SELECT u.id, u.username, p.content, p.visibility, p.created_at FROM users u JOIN posts p ON u.id = p.user_id AND p.visibility = 0";
+        //daca nu e logat, doar cele publice de la userii publici
+        sql_select = "SELECT u.id, u.username, p.content, p.visibility, p.created_at FROM users u "
+                        "JOIN posts p ON u.id = p.user_id AND p.visibility = 0 AND u.privacy = 0";
         rc = sqlite3_prepare_v2(db, sql_select, -1, &stmt, 0);
     }
     else
     {
-        //daca e logat, cele unde friends.type + 1 >= posts.visibility (daca e close friend le vede si pe cele regular, invers nu)
+        //daca e logat, cele unde friends.type + 1 >= posts.visibility (daca e close friend le vede si pe cele regular, invers nu) 
         sql_select = "SELECT u.id, u.username, p.content, p.visibility, p.created_at FROM users u "
                         "JOIN posts p ON u.id = p.user_id "
                         "LEFT JOIN friends f ON ((f.user_id = ? AND f.friend_id = u.id) OR (f.user_id = u.id AND f.friend_id = ?)) AND f.status = 1 "
                         "WHERE p.user_id = ? "
-                        "OR p.visibility = 0 "
-                        "OR f.user_id IS NOT NULL AND f.type + 1 >= p.visibility";
+                        "OR (p.visibility = 0 AND (f.user_id IS NOT NULL OR u.privacy = 0)) "
+                        "OR (f.user_id IS NOT NULL AND f.type + 1 >= p.visibility)";
         rc = sqlite3_prepare_v2(db, sql_select, -1, &stmt, 0);
         sqlite3_bind_int(stmt, 1, *client_id);
         sqlite3_bind_int(stmt, 2, *client_id);
@@ -1886,25 +1887,164 @@ const char* showgroupchatCommand(const char* groupname, int* client_id)
     }
 }
 
-const char* privacyCommand(int* client_id)
+const char* privacyCommand(const char* type, int* client_id)
 {
-    pthread_mutex_lock(&g_users_mutex);
+    if (*client_id == LOGGED_OUT)
+        return NOT_LOGGED;
 
-    if (*client_id != LOGGED_OUT)
+    int int_type = 0;
+    if (strcmp(type, PRIVACY_PUBLIC) == 0)
+        int_type = public;
+    else if (strcmp(type, PRIVACY_PRIVATE) == 0)
+        int_type = private;
+    else
+        return PRIVACY_INVALID;
+
+    int rc;
+    sqlite3_stmt* stmt;
+    const char* sql_update = "UPDATE users SET privacy = ? WHERE id = ?";
+    rc = sqlite3_prepare_v2(db, sql_update, -1, &stmt, 0);
+    if (rc != SQLITE_OK)
     {
-        pthread_mutex_unlock(&g_users_mutex);
-        return generateOutput("PRIVACY_COMMAND");
+        printf("[server] Eroare sql_prepare() la friendtype\n");
+        return SQL_ERROR;
     }
+
+    sqlite3_bind_int(stmt, 1, int_type);
+    sqlite3_bind_int(stmt, 2, *client_id);
+
+    pthread_mutex_lock(&g_friends_mutex);
+
+    rc = sqlite3_step(stmt);
+    sqlite3_finalize(stmt);
+
+    pthread_mutex_unlock(&g_friends_mutex);
+
+    if (rc == SQLITE_DONE)
+        return PRIVACY_SUCCESS;
     else
     {
-        pthread_mutex_unlock(&g_users_mutex);
-        return NOT_LOGGED;
+        printf("[server] Eroare la sqlite3_step() la friendtype\n");
+        return SQL_ERROR;
     }
 }
 
 const char* userCommand(int* client_id)
 {
-    return "WILLBE\n\n\n";
+    if (*client_id == LOGGED_OUT)
+        return NOT_LOGGED;
+    
+    int rc;
+    sqlite3_stmt* stmt;
+    const char* sql_select = "SELECT username, " // usernameul
+                                    "COUNT(" // numarul de prieteni
+                                        "SELECT 1 FROM users u "
+                                        "JOIN friends f ON (f.user_id = u.id OR f.friend_id = u.id) "
+                                        "WHERE u.id = ? AND f.status = 1 "
+                                        "),"
+                                    "COUNT(" // numarul de postari
+                                        "SELECT 1 FROM users u "
+                                        "JOIN posts p ON p.user_id = u.id "
+                                        "WHERE u.id = ?"
+                                        "),"
+                                    "COUNT(" // numarul de grupuri in care este
+                                        "SELECT 1 FROM users u "
+                                        "JOIN group_members gm ON gm.user_id = u.id "
+                                        "JOIN groups g ON g.id = gm.group_id "
+                                        "WHERE u.id = ?"
+                                        "),"
+                                    "COUNT(" // numarul de dmuri trimise
+                                        "SELECT 1 FROM users u "
+                                        "JOIN messages m ON m.sender_id = u.id "
+                                        "WHERE u.id = ?"
+                                        "),"
+                                    "COUNT(" // numarul de dmuri primite
+                                        "SELECT 1 FROM users u "
+                                        "JOIN messages m ON m.receiver_id = u.id "
+                                        "WHERE u.id = ?"
+                                        "),"
+                                    "COUNT(" // numarul de mesaje trimise in grupuri
+                                        "SELECT 1 FROM users u "
+                                        "JOIN group_messages gm ON gm.sender_id = u.id "
+                                        "WHERE u.id = ?"
+                                        "),"
+                                    "COUNT(" // numarul de mesaje primite in grupuri
+                                        "SELECT 1 FROM users u "
+                                        "JOIN group_members gm ON gm.user_id = u.id "
+                                        "JOIN groups g ON g.id = gm.group_id "
+                                        "JOIN group_messages m ON m.group_id = g.id "
+                                        "WHERE u.id = ? AND m.sender_id != u.id"
+                                        ") "
+                                    "FROM users WHERE id = ?";
+    rc = sqlite3_prepare_v2(db, sql_select, -1, &stmt, 0);
+    if (rc != SQLITE_OK)
+    {
+        printf("[server] Eroare sql_prepare() la user\n");
+        return SQL_ERROR;
+    }
+    sqlite3_bind_int(stmt, 1, *client_id);
+    sqlite3_bind_int(stmt, 2, *client_id);
+    sqlite3_bind_int(stmt, 3, *client_id);
+    sqlite3_bind_int(stmt, 4, *client_id);
+    sqlite3_bind_int(stmt, 5, *client_id);
+    sqlite3_bind_int(stmt, 6, *client_id);
+    sqlite3_bind_int(stmt, 7, *client_id);
+
+    char* output;
+    
+    pthread_mutex_lock(&g_users_mutex);
+    pthread_mutex_lock(&g_friends_mutex);
+    pthread_mutex_lock(&g_posts_mutex);
+    pthread_mutex_lock(&g_chats_mutex);
+    pthread_mutex_lock(&g_groups_mutex);
+    pthread_mutex_lock(&g_groupmembers_mutex);
+    pthread_mutex_lock(&g_groupmessages_mutex);
+
+    if ((rc = sqlite3_step(stmt)) == SQLITE_ROW)
+    {
+        const unsigned char* username = sqlite3_column_text(stmt, 0);
+        int friendCount = sqlite3_column_int(stmt, 1);
+        int postCount = sqlite3_column_int(stmt, 2);
+        int groupCount = sqlite3_column_int(stmt, 3);
+        int sentdmCount = sqlite3_column_int(stmt, 4);
+        int receiveddmCount = sqlite3_column_int(stmt, 5);
+        int sentgroupdmCount = sqlite3_column_int(stmt, 6);
+        int receivedgroupdmCount = sqlite3_column_int(stmt, 7);
+
+        char final[BUFFER_SIZE];
+        snprintf(final, sizeof(final), "\nUsername:\t%s\n"
+                                        "Number of friends:\t%d\n"
+                                        "Number of posts:\t%d\n"
+                                        "Number of groups joined:\t%d\n"
+                                        "Number of DMs sent:\t%d\n"
+                                        "Number of DMs received:\t%d\n"
+                                        "Number of Group DMs sent:\t%d\n"
+                                        "Number of Group DMs received:\t%d",
+                                        username, friendCount, postCount,
+                                        groupCount, sentdmCount, receiveddmCount,
+                                        sentgroupdmCount, receivedgroupdmCount);
+
+        output = malloc(strlen(final)) + 1;
+        strcpy(output, final);
+    }
+    sqlite3_finalize(stmt);
+    
+    pthread_mutex_unlock(&g_users_mutex);
+    pthread_mutex_unlock(&g_friends_mutex);
+    pthread_mutex_unlock(&g_posts_mutex);
+    pthread_mutex_unlock(&g_chats_mutex);
+    pthread_mutex_unlock(&g_groups_mutex);
+    pthread_mutex_unlock(&g_groupmembers_mutex);
+    pthread_mutex_unlock(&g_groupmessages_mutex);
+
+    if (rc == SQLITE_DONE)
+        return output;
+    else
+    {
+        free(output);
+        printf("[server] Eroare la sqlite3_step() la friends\n");
+        return SQL_ERROR;
+    }
 }
 
 const char* banCommand(int* client_id)
