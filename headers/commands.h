@@ -16,8 +16,8 @@
 #define REGULAR_USER "REGULAR"
 #define ADMIN_USER "ADMIN"
 #define INVALID_TYPE "INVALID USER TYPE (REGULAR/ADMIN)"
-#define USERNAME_TOO_LONG "USERNAME TOO LONG (>= 31 characters)"
-#define PASSWORD_TOO_LONG "PASSWORD TOO LONG (>= 31 characters)"
+#define USERNAME_TOO_LONG "USERNAME TOO LONG"
+#define PASSWORD_TOO_LONG "PASSWORD TOO LONG"
 
 #define LOGIN_COMMAND "LOGIN"
 #define LOGIN_ARGC 2
@@ -87,29 +87,63 @@
 #define POSTS_COMMAND "POSTS"
 #define POSTS_ARGC 0
 #define POSTS "\nPOSTS:"
-#define POSTS_FAILED "\nNO POSTS AVAILABLE"
+#define POSTS_FAILED "NO POSTS AVAILABLE"
 
 #define CHAT_COMMAND "CHAT"
 #define CHAT_ARGC 2
 #define CHAT_SELF "CAN'T MESSAGE SELF"
 #define CHAT_SUCCESS "CHAT SENT"
 
-#define CHATS_COMMAND "CHATS" //
+#define CHATS_COMMAND "CHATS"
 #define CHATS_ARGC 0
 #define CHATS "\nAVAILABLE CHATS:"
 #define CHATS_SUFFIX "\nUSE SHOWCHAT <user_id/username> to see the chat with the given user_id/username"
-#define CHATS_FAILED "\nNO CHATS AVAILABLE"
+#define CHATS_FAILED "NO CHATS AVAILABLE"
 
 #define SHOWCHAT_COMMAND "SHOWCHAT"
 #define SHOWCHAT_ARGC 1
 #define SHOWCHAT_SELF CHAT_SELF
 #define SHOWCHAT "\nCHAT WITH "
 
+#define CREATEGROUP_COMMAND "CREATEGROUP"
+#define CREATEGROUP_ARGC 1
+#define GROUPNAME_TOO_LONG "GROUP NAME TOO LONG"
+#define CREATEGROUP_SUCCESS "GROUP CREATED"
+#define CREATEGROUP_FAILED "GROUP NAME ALREADY TAKEN"
+
+#define INVITE_COMMAND "INVITE"
+#define INVITE_ARGC 2
+#define INVITE_SELF "CAN'T INVITE SELF"
+#define INVITE_SUCCESS "USER ADDED TO GROUP"
+#define INVITE_FAILED "YOU ARE NOT IN THE GROUP"
+#define INVITE_GROUPNOTEXIST "GROUP DOESN'T EXIST"
+#define INVITE_ALREADY "USER ALREADY IN GROUP"
+
+#define KICK_COMMAND "KICK"
+#define KICK_ARGC 2
+#define KICK_SELF "CAN'T KICK SELF. USE LEAVE"
+#define KICK_SUCCESS "USER KICKED"
+#define KICK_FAILED INVITE_FAILED
+#define KICK_NOTOWNER "YOU ARE NOT THE OWNER OF THE GROUP"
+#define KICK_GROUPNOTEXIST INVITE_GROUPNOTEXIST
+#define KICK_ALREADY "USER IS NOT IN GROUP"
+
+#define LEAVE_COMMAND "LEAVE"
+#define LEAVE_ARGC 1
+#define LEAVE_SUCCESS "GROUP LEFT"
+#define LEAVE_FAILED INVITE_FAILED
+
+#define MEMBERS_COMMAND "MEMBERS"
+#define MEMBERS_ARGC 1
+#define MEMBERS "\nMEMBERS OF "
+
+#define GROUPS_COMMAND "GROUPS"
+#define GROUPS_ARGC 0
+#define GROUPS "\nJOINED GROUPS:"
+#define GROUPS_FAILED "NO GROUPS AVAILABLE"
+
 #define GROUPCHAT_COMMAND "GROUPCHAT" //
 #define GROUPCHAT_ARGC 2
-
-#define GROUPCHATS_COMMAND "GROUPCHATS" //
-#define GROUPCHATS_ARGC 0
 
 #define SHOWGROUPCHAT_COMMAND "SHOWGROUPCHAT" //
 #define SHOWGROUPCHAT_ARGC 1
@@ -140,13 +174,14 @@
     CHATS - Shows the available chats (minimum 1 message sent/received).\n\
     SHOWCHAT <user_id/username> - Shows the chat with the given user_id/username.\n\
     CREATEGROUP <groupname> - Creates a group with the given name.\n\
-    INVITE <user_id/username> <group_id/groupname> - Invites the given user_id/username to the given group_id/groupname.\n\
-    KICK <user_id/username> <group_id/groupname> - Kicks the given user_id/username from the given group_id/groupname.\n\
-    LEAVE <group_id/groupname> - Leaves group with given group_id/groupname>.\n\
+    INVITE <user_id/username> <group_id/groupname> - Adds the given user_id/username to the given group_id/groupname.\n\
+    KICK <user_id/username> <group_id/groupname> - Kicks the given user_id/username from the given group_id/groupname. Must be the owner!\n\
+    LEAVE <group_id/groupname> - Leaves the group with the given group_id/groupname.\n\
+    MEMBERS <group_id/groupname> - Shows the members of the given group_id/groupname.\n\
+    GROUPS - Shows the groups you are a member of.\n\
     GROUPCHAT <group_id/groupname> <message> - Sends the given message to the given group_id/groupname.\n\
-    GROUPCHATS - Shows the available group chats (minimum 1 message sent/received).\n\
     SHOWGROUPCHAT <group_id/groupname> - Shows the chat of the given group_id/groupname.\n\
-    PRIVACY PUBLIC/PRIVATE - Sets the profile's and posts' privacy to the given privacy.\n\
+    PRIVACY PUBLIC/PRIVATE - Sets the profile's privacy to the given privacy.\n\
     USER - Shows info about logged user.\n\
     BAN <user_id/username> <reason> - Bans the user that matches the given user_id/username. Only for admins!\
 "

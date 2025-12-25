@@ -118,7 +118,7 @@ void initDatabase()
             // 5. Groups
             "CREATE TABLE IF NOT EXISTS groups ("
             "id INTEGER PRIMARY KEY AUTOINCREMENT,"
-            "name TEXT NOT NULL,"
+            "name TEXT NOT NULL UNIQUE,"
             "owner_id INTEGER NOT NULL,"
             "FOREIGN KEY (owner_id) REFERENCES users(id)"
             ");"
@@ -371,6 +371,79 @@ const char* handleCommand(char** tokens, int* tokenCount, int* client_id)
         else if (*tokenCount == 0)
             return NO_ARGUMENTS;
         else if (*tokenCount > SHOWCHAT_ARGC)
+            return MORE_ARGUMENTS;
+    }
+    else if (strcmp(command, CREATEGROUP_COMMAND) == 0)
+    {
+        if (*tokenCount == CREATEGROUP_ARGC)
+        {
+            const char* groupname = tokens[1];
+            return creategroupCommand(groupname, client_id);
+        }
+        else if (*tokenCount == 0)
+            return NO_ARGUMENTS;
+        else if (*tokenCount > CREATEGROUP_ARGC)
+            return MORE_ARGUMENTS;
+    }
+    else if (strcmp(command, INVITE_COMMAND) == 0)
+    {
+        if (*tokenCount == INVITE_ARGC)
+        {
+            const char* username = tokens[1];
+            const char* groupname = tokens[2];
+            return inviteCommand(username, groupname, client_id);
+        }
+        else if (*tokenCount == 0)
+            return NO_ARGUMENTS;
+        else if (*tokenCount < INVITE_ARGC)
+            return LESS_ARGUMENTS;
+        else if (*tokenCount > INVITE_ARGC)
+            return MORE_ARGUMENTS;
+    }
+    else if (strcmp(command, KICK_COMMAND) == 0)
+    {
+        if (*tokenCount == KICK_ARGC)
+        {
+            const char* username = tokens[1];
+            const char* groupname = tokens[2];
+            return kickCommand(username, groupname, client_id);
+        }
+        else if (*tokenCount == 0)
+            return NO_ARGUMENTS;
+        else if (*tokenCount < KICK_ARGC)
+            return LESS_ARGUMENTS;
+        else if (*tokenCount > KICK_ARGC)
+            return MORE_ARGUMENTS;
+    }
+    else if (strcmp(command, LEAVE_COMMAND) == 0)
+    {
+        if (*tokenCount == LEAVE_ARGC)
+        {
+            const char* groupname = tokens[1];
+            return leaveCommand(groupname, client_id);
+        }
+        else if (*tokenCount == 0)
+            return NO_ARGUMENTS;
+        else if (*tokenCount > LEAVE_ARGC)
+            return MORE_ARGUMENTS;
+    }
+    else if (strcmp(command, MEMBERS_COMMAND) == 0)
+    {
+        if (*tokenCount == MEMBERS_ARGC)
+        {
+            const char* groupname = tokens[1];
+            return membersCommand(groupname, client_id);
+        }
+        else if (*tokenCount == 0)
+            return NO_ARGUMENTS;
+        else if (*tokenCount > MEMBERS_ARGC)
+            return MORE_ARGUMENTS;
+    }
+    else if (strcmp(command, GROUPS_COMMAND) == 0)
+    {
+        if (*tokenCount == GROUPS_ARGC)
+            return groupsCommand(client_id);
+        else if (*tokenCount > GROUPS_ARGC)
             return MORE_ARGUMENTS;
     }
     else if (strcmp(command, GROUPCHAT_COMMAND) == 0)

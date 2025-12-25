@@ -1,7 +1,8 @@
 #pragma once
 #include <sqlite3.h>
-#define usernameLength 32
-#define passwordLength 32
+#define usernameLength 64
+#define passwordLength 64
+#define groupnameLength usernameLength
 
 enum userType
 {
