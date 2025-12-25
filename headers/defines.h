@@ -1,4 +1,4 @@
 #define LOCAL_HOST "127.0.0.1"
 #define SERVER_HOST "10.100.0.30"
 #define PORT 7770
-#define BUFFER_SIZE 128
+#define BUFFER_SIZE 512

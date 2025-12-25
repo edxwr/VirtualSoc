@@ -16,6 +16,26 @@
 
 /* ------------------------------------------------------------------ */
 
+const char* tokensToMessage(char** tokens, int startToken, int* tokenCount)
+{
+    char* message = malloc(1);
+    int messageSize = 1;
+    message[0] = '\0';
+
+    for (int i = startToken; i <= *tokenCount; ++i)
+    {
+        messageSize += strlen(tokens[i]) + 1;
+        message = realloc(message, messageSize);
+        strcat(message, tokens[i]);
+        strcat(message, " ");
+    }
+
+    message = realloc(message, messageSize - 1); //scoatem ultimul ' '
+    message[messageSize - 2] = '\0';
+
+    return message;
+}
+
 void freeTokens(char** tokens, int count)
 {
     if (tokens == NULL)
@@ -218,9 +238,11 @@ const char* handleCommand(char** tokens, int* tokenCount, int* client_id)
     }
     else if (strcmp(command, ADD_COMMAND) == 0)
     {
-        const char* username = tokens[1];
         if (*tokenCount == ADD_ARGC)
+        {
+            const char* username = tokens[1];
             return addCommand(username, client_id);
+        }
         else if (*tokenCount == 0)
             return NO_ARGUMENTS;
         else if (*tokenCount < ADD_ARGC)
@@ -230,9 +252,11 @@ const char* handleCommand(char** tokens, int* tokenCount, int* client_id)
     }
     else if (strcmp(command, ACCEPT_COMMAND) == 0)
     {
-        const char* username = tokens[1];
         if (*tokenCount == REQUEST_ARGC)
+        {
+            const char* username = tokens[1];
             return acceptCommand(username, client_id);
+        }
         else if (*tokenCount == 0)
             return NO_ARGUMENTS;
         else if (*tokenCount < REQUEST_ARGC)
@@ -240,9 +264,11 @@ const char* handleCommand(char** tokens, int* tokenCount, int* client_id)
     }
     else if (strcmp(command, DECLINE_COMMAND) == 0)
     {
-        const char* username = tokens[1];
         if (*tokenCount == REQUEST_ARGC)
+        {
+            const char* username = tokens[1];
             return declineCommand(username, client_id);
+        }
         else if (*tokenCount == 0)
             return NO_ARGUMENTS;
         else if (*tokenCount < REQUEST_ARGC)
@@ -257,9 +283,11 @@ const char* handleCommand(char** tokens, int* tokenCount, int* client_id)
     }
     else if (strcmp(command, REMOVE_COMMAND) == 0)
     {
-        const char* username = tokens[1];
         if (*tokenCount == REMOVE_ARGC)
+        {
+            const char* username = tokens[1];
             return removeCommand(username, client_id);
+        }
         else if (*tokenCount == 0)
             return NO_ARGUMENTS;
         else if (*tokenCount < REMOVE_ARGC)
@@ -280,10 +308,12 @@ const char* handleCommand(char** tokens, int* tokenCount, int* client_id)
     }
     else if (strcmp(command, FRIENDTYPE_COMMAND) == 0)
     {
-        const char* username = tokens[1];
-        const char* type = tokens[2];
         if (*tokenCount == FRIENDTYPE_ARGC)
+        {
+            const char* username = tokens[1];
+            const char* type = tokens[2];
             return friendtypeCommand(username, type, client_id);
+        }
         else if (*tokenCount == 0)
             return NO_ARGUMENTS;
         else if (*tokenCount < FRIENDTYPE_ARGC)
@@ -294,27 +324,54 @@ const char* handleCommand(char** tokens, int* tokenCount, int* client_id)
     else if (strcmp(command, POST_COMMAND) == 0)
     {
         if (*tokenCount >= POST_ARGC)
-            return postCommand(client_id);
+        {
+            const char* privacy = tokens[1];
+            const char* message = tokensToMessage(tokens, POST_ARGC, tokenCount);
+            return postCommand(privacy, message, client_id);
+        }
         else if (*tokenCount == 0)
             return NO_ARGUMENTS;
         else if (*tokenCount < POST_ARGC)
             return LESS_ARGUMENTS;
     }
-    else if (strcmp(command, VIEW_COMMAND) == 0)
+    else if (strcmp(command, POSTS_COMMAND) == 0)
     {
-        if (*tokenCount == VIEW_ARGC)
-            return viewCommand(client_id);
-        else if (*tokenCount > VIEW_ARGC)
+        if (*tokenCount == POSTS_ARGC)
+            return postsCommand(client_id);
+        else if (*tokenCount > POSTS_ARGC)
             return MORE_ARGUMENTS;
     }
     else if (strcmp(command, CHAT_COMMAND) == 0)
     {
         if (*tokenCount >= CHAT_ARGC)
-            return chatCommand(client_id);
+        {
+            const char* username = tokens[1];
+            const char* message = tokensToMessage(tokens, CHAT_ARGC, tokenCount);
+            return chatCommand(username, message, client_id);
+        }
         else if (*tokenCount == 0)
             return NO_ARGUMENTS;
         else if (*tokenCount < CHAT_ARGC)
             return LESS_ARGUMENTS;
+    }
+    else if (strcmp(command, CHATS_COMMAND) == 0)
+    {
+        if (*tokenCount == CHATS_ARGC)
+            return chatsCommand(client_id);
+        else if (*tokenCount > CHATS_ARGC)
+            return MORE_ARGUMENTS;
+    }
+    else if (strcmp(command, SHOWCHAT_COMMAND) == 0)
+    {
+        if (*tokenCount == SHOWCHAT_ARGC)
+        {
+            const char* username = tokens[1];
+            return showchatCommand(username, client_id);
+        }
+        else if (*tokenCount == 0)
+            return NO_ARGUMENTS;
+        else if (*tokenCount > SHOWCHAT_ARGC)
+            return MORE_ARGUMENTS;
     }
     else if (strcmp(command, GROUPCHAT_COMMAND) == 0)
     {

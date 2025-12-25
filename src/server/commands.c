@@ -1,6 +1,7 @@
 #pragma once
 #include "../../headers/commands.h"
 #include "../../headers/structs.h"
+#include "../../headers/defines.h"
 
 #include <stdlib.h>
 #include <pthread.h>
@@ -72,6 +73,38 @@ int usernameToId(const char* username)
         sqlite3_finalize(useridStmt);
         pthread_mutex_unlock(&g_users_mutex);
         return -2;
+    }
+}
+
+unsigned char* idToUsername(int id)
+{
+    unsigned char* username;
+    sqlite3_stmt* useridStmt;
+    const char* sql_select = "SELECT username FROM users WHERE id = ?";
+    int rc = sqlite3_prepare_v2(db, sql_select, -1, &useridStmt, 0);
+    if (rc != SQLITE_OK)
+    {
+        printf("[server] Eroare sql_prepare()\n");
+        return SQL_ERROR;
+    }
+    sqlite3_bind_int(useridStmt, 1, id);
+    pthread_mutex_lock(&g_users_mutex);
+    rc = sqlite3_step(useridStmt);
+    if (rc == SQLITE_ROW)
+    {
+        const unsigned char* tempUsername = sqlite3_column_text(useridStmt, 0);
+        username = malloc(strlen(tempUsername) + 1);
+        strcpy(username, tempUsername);
+        sqlite3_finalize(useridStmt);
+        pthread_mutex_unlock(&g_users_mutex);
+        return username;
+    }
+    else
+    {
+        printf("[server] Eroare la sqlite3_step()\n");
+        sqlite3_finalize(useridStmt);
+        pthread_mutex_unlock(&g_users_mutex);
+        return SQL_ERROR;
     }
 }
 
@@ -218,9 +251,6 @@ const char* addCommand(const char* username, int* client_id)
 
     if (*client_id == friendID)
         return ADD_SELF;
-
-    if (!userExists(friendID))
-        return ADD_FAILED;
     
     sqlite3_stmt* check_added;
     const char* sql_check = "SELECT status, user_id FROM friends WHERE ((user_id = ? AND friend_id = ?) OR (user_id = ? AND friend_id = ?))";
@@ -434,7 +464,7 @@ const char* requestsCommand(int* client_id)
         int id = sqlite3_column_int(stmt, 0);
         const unsigned char* username = sqlite3_column_text(stmt, 1);
 
-        char request[64];
+        char request[BUFFER_SIZE];
         snprintf(request, sizeof(request), "\n[%d] %s", id, username);
 
         inrequestsSize += strlen(request);
@@ -476,7 +506,7 @@ const char* requestsCommand(int* client_id)
         int id = sqlite3_column_int(stmt, 0);
         const unsigned char* username = sqlite3_column_text(stmt, 1);
 
-        char request[64];
+        char request[BUFFER_SIZE];
         snprintf(request, sizeof(request), "\n[%d] %s", id, username);
 
         outrequestsSize += strlen(request);
@@ -572,7 +602,7 @@ const char* removeCommand(const char* username, int* client_id)
         return REMOVE_FAILED;
     else
     {
-        printf("[server] Eroare la sqlite3_step() la add\n");
+        printf("[server] Eroare la sqlite3_step() la remove\n");
         return SQL_ERROR;
     }
 }
@@ -589,7 +619,7 @@ const char* friendsCommand(int* client_id)
     rc = sqlite3_prepare_v2(db, sql_select, -1, &stmt, 0);
     if (rc != SQLITE_OK)
     {
-        printf("[server] Eroare sql_prepare() la add\n");
+        printf("[server] Eroare sql_prepare() la friends\n");
         return SQL_ERROR;
     }
     sqlite3_bind_int(stmt, 1, *client_id);
@@ -599,7 +629,6 @@ const char* friendsCommand(int* client_id)
     char* friends = malloc(friendsSize);
     strcpy(friends, FRIENDS);
 
-    //Incoming Requests
     pthread_mutex_lock(&g_friends_mutex);
     pthread_mutex_lock(&g_users_mutex);
 
@@ -610,7 +639,7 @@ const char* friendsCommand(int* client_id)
         int type = sqlite3_column_int(stmt, 2);
         const char* type_text = type == 0 ? "REGULAR" : "CLOSE";
 
-        char friend[64];
+        char friend[BUFFER_SIZE];
         snprintf(friend, sizeof(friend), "\n[%d] %s | %s", id, username, type_text);
 
         friendsSize += strlen(friend);
@@ -633,7 +662,7 @@ const char* friendsCommand(int* client_id)
     else
     {
         free(friends);
-        printf("[server] Eroare la sqlite3_step() la add\n");
+        printf("[server] Eroare la sqlite3_step() la friends\n");
         return SQL_ERROR;
     }
 }
@@ -680,7 +709,7 @@ const char* friendtypeCommand(const char* username, const char* type, int* clien
     rc = sqlite3_prepare_v2(db, sql_update, -1, &stmt, 0);
     if (rc != SQLITE_OK)
     {
-        printf("[server] Eroare sql_prepare() la register\n");
+        printf("[server] Eroare sql_prepare() la friendtype\n");
         return SQL_ERROR;
     }
 
@@ -706,47 +735,369 @@ const char* friendtypeCommand(const char* username, const char* type, int* clien
         return FRIENDTYPE_FAILED;
     else
     {
-        printf("[server] Eroare la sqlite3_step() la register\n");
+        printf("[server] Eroare la sqlite3_step() la friendtype\n");
         return SQL_ERROR;
     }
 }
 
-const char* postCommand(int* client_id)
+const char* postCommand(const char* privacy, const char* message, int* client_id)
 {
+    if (*client_id == LOGGED_OUT)
+        return NOT_LOGGED;
+    
+    int rc;
+    int int_privacy;
+    if (strcmp(privacy, POST_PUBLIC) == 0)
+        int_privacy = public_post;
+    else if (strcmp(privacy, POST_REGULAR) == 0)
+        int_privacy = regular_post;
+    else if (strcmp(privacy, POST_CLOSE) == 0)
+        int_privacy = close_post;
+    else
+        return INVALID_POST_TYPE;
+
+    sqlite3_stmt* stmt;
+    const char* sql_insert = "INSERT into POSTS (user_id, content, visibility) VALUES (?, ?, ?)";
+    rc = sqlite3_prepare_v2(db, sql_insert, -1, &stmt, 0);
+    if (rc != SQLITE_OK)
+    {
+        printf("[server] Eroare sql_prepare()\n");
+        return SQL_ERROR;
+    }
+
+    sqlite3_bind_int(stmt, 1, *client_id);
+    sqlite3_bind_text(stmt, 2, message, -1, SQLITE_STATIC);
+    sqlite3_bind_int(stmt, 3, int_privacy);
+
     pthread_mutex_lock(&g_posts_mutex);
 
-    if (*client_id != LOGGED_OUT)
+    rc = sqlite3_step(stmt);
+    sqlite3_finalize(stmt);
+
+    pthread_mutex_unlock(&g_posts_mutex);
+
+    if (rc == SQLITE_DONE)
+        return POST_SUCCESS;
+    else
     {
-        pthread_mutex_unlock(&g_posts_mutex);
-        return generateOutput("POST_COMMAND");
+        printf("[server] Eroare sqlite3_step() la post\n");
+        return SQL_ERROR;
+    }
+}
+
+const char* postsCommand(int* client_id)
+{   
+    int rc;
+    sqlite3_stmt* stmt;
+    const char* sql_select;
+    if (*client_id == LOGGED_OUT)
+    {
+        //daca nu e logat, doar cele publice
+        sql_select = "SELECT u.id, u.username, p.content, p.visibility, p.created_at FROM users u JOIN posts p ON u.id = p.user_id AND p.visibility = 0";
+        rc = sqlite3_prepare_v2(db, sql_select, -1, &stmt, 0);
     }
     else
     {
-        pthread_mutex_unlock(&g_posts_mutex);
-        return NOT_LOGGED;
+        //daca e logat, cele unde friends.type + 1 >= posts.visibility (daca e close friend le vede si pe cele regular, invers nu)
+        sql_select = "SELECT u.id, u.username, p.content, p.visibility, p.created_at FROM users u "
+                        "JOIN posts p ON u.id = p.user_id "
+                        "LEFT JOIN friends f ON ((f.user_id = ? AND f.friend_id = u.id) OR (f.user_id = u.id AND f.friend_id = ?)) AND f.status = 1 "
+                        "WHERE p.user_id = ? "
+                        "OR p.visibility = 0 "
+                        "OR f.user_id IS NOT NULL AND f.type + 1 >= p.visibility";
+        rc = sqlite3_prepare_v2(db, sql_select, -1, &stmt, 0);
+        sqlite3_bind_int(stmt, 1, *client_id);
+        sqlite3_bind_int(stmt, 2, *client_id);
+        sqlite3_bind_int(stmt, 3, *client_id);
+    }
+
+    if (rc != SQLITE_OK)
+    {
+        printf("[server] Eroare sql_prepare() la friends\n");
+        return SQL_ERROR;
+    }
+
+    int postsSize = sizeof(POSTS);
+    char* posts = malloc(postsSize);
+    strcpy(posts, POSTS);
+
+    pthread_mutex_lock(&g_friends_mutex);
+    pthread_mutex_lock(&g_posts_mutex);
+    pthread_mutex_lock(&g_users_mutex);
+
+    while ((rc = sqlite3_step(stmt)) == SQLITE_ROW)
+    {
+        int user_id = sqlite3_column_int(stmt, 0);
+        const unsigned char* username = sqlite3_column_text(stmt, 1);
+        const unsigned char* content = sqlite3_column_text(stmt, 2);
+        int visibility = sqlite3_column_int(stmt, 3);
+        const unsigned char* created_at = sqlite3_column_text(stmt, 4);
+
+        const char* visibility_text;
+        if (visibility == public_post)
+            visibility_text = POST_PUBLIC;
+        else if (visibility == regular_post)
+            visibility_text = POST_REGULAR;
+        else
+            visibility_text = POST_CLOSE;
+
+        char post[BUFFER_SIZE];
+        snprintf(post, sizeof(post), "\n(%s) [%d] %s | \"%s\" | %s", created_at, user_id, username, content, visibility_text);
+
+        postsSize += strlen(post);
+        posts = realloc(posts, postsSize);
+        strcat(posts, post);
+    }
+    sqlite3_finalize(stmt);
+    
+    pthread_mutex_unlock(&g_friends_mutex);
+    pthread_mutex_unlock(&g_posts_mutex);
+    pthread_mutex_unlock(&g_users_mutex);
+
+    if (postsSize == sizeof(POSTS))
+    {
+        posts = realloc(posts, sizeof(POSTS_FAILED));
+        strcpy(posts, POSTS_FAILED);
+    }
+
+    if (rc == SQLITE_DONE)
+        return posts;
+    else
+    {
+        free(posts);
+        printf("[server] Eroare la sqlite3_step() la friends\n");
+        return SQL_ERROR;
     }
 }
 
-const char* viewCommand(int* client_id)
+const char* chatCommand(const char* username, const char* message, int* client_id)
 {
-    pthread_mutex_lock(&g_posts_mutex);
-    pthread_mutex_unlock(&g_posts_mutex);
-    return generateOutput("VIEW_COMMAND");
-}
+    if (*client_id == LOGGED_OUT)
+        return NOT_LOGGED;
+    
+    char* endptr;
+    int receiverID = strtol(username, &endptr, 10);
+    int rc;
 
-const char* chatCommand(int* client_id)
-{
+    if (*endptr != '\0') // userul a dat un username nu un id si facem rost de id dupa username
+    {
+        receiverID = usernameToId(username);
+        if (receiverID == -1)
+            return ADD_FAILED;
+        else if (receiverID == -2)
+            return SQL_ERROR;
+    }
+    else
+    {
+        if (!userExists(receiverID))
+            return ADD_FAILED;
+    }
+
+    if (*client_id == receiverID)
+        return CHAT_SELF;
+    
+    sqlite3_stmt* stmt;
+    const char* sql_insert = "INSERT into messages (sender_id, receiver_id, message) VALUES (?, ?, ?)";
+    rc = sqlite3_prepare_v2(db, sql_insert, -1, &stmt, 0);
+    if (rc != SQLITE_OK)
+    {
+        printf("[server] Eroare sql_prepare()\n");
+        return SQL_ERROR;
+    }
+
+    sqlite3_bind_int(stmt, 1, *client_id);
+    sqlite3_bind_int(stmt, 2, receiverID);
+    sqlite3_bind_text(stmt, 3, message, -1, SQLITE_STATIC);
+
     pthread_mutex_lock(&g_chats_mutex);
 
-    if (*client_id != LOGGED_OUT)
+    rc = sqlite3_step(stmt);
+    sqlite3_finalize(stmt);
+
+    pthread_mutex_unlock(&g_chats_mutex);
+
+    if (rc == SQLITE_DONE)
+        return CHAT_SUCCESS;
+    else
     {
-        pthread_mutex_unlock(&g_chats_mutex);
-        return generateOutput("CHAT_COMMAND");
+        printf("[server] Eroare sqlite3_step() la post\n");
+        return SQL_ERROR;
+    }
+}
+
+const char* chatsCommand(int* client_id)
+{
+    if (*client_id == LOGGED_OUT)
+        return NOT_LOGGED;
+    
+    int rc;
+    
+    sqlite3_stmt* stmt;
+    const char* sql_select = "SELECT u.id, u.username, m.message, m.created_at, m.sender_id FROM users u "
+                                "JOIN messages m ON u.id = (CASE WHEN m.sender_id = ? THEN m.receiver_id ELSE m.sender_id END) "
+                                "WHERE m.id IN ("
+                                "SELECT MAX(id) FROM messages "
+                                "WHERE sender_id = ? or receiver_id = ? "
+                                "GROUP BY CASE WHEN sender_id = ? THEN receiver_id ELSE sender_id END) "
+                                "ORDER BY m.created_at DESC";
+    rc = sqlite3_prepare_v2(db, sql_select, -1, &stmt, 0);
+    if (rc != SQLITE_OK)
+    {
+        printf("[server] Eroare sql_prepare() la friends\n");
+        return SQL_ERROR;
+    }
+    sqlite3_bind_int(stmt, 1, *client_id);
+    sqlite3_bind_int(stmt, 2, *client_id);
+    sqlite3_bind_int(stmt, 3, *client_id);
+    sqlite3_bind_int(stmt, 4, *client_id);
+
+    int chatsSize = sizeof(CHATS);
+    char* chats = malloc(chatsSize);
+    strcpy(chats, CHATS);
+
+    pthread_mutex_lock(&g_chats_mutex);
+    pthread_mutex_lock(&g_users_mutex);
+
+    while ((rc = sqlite3_step(stmt)) == SQLITE_ROW)
+    {
+        int id = sqlite3_column_int(stmt, 0);
+        const unsigned char* username = sqlite3_column_text(stmt, 1);
+        const unsigned char* message = sqlite3_column_text(stmt, 2);
+        const unsigned char* created_at = sqlite3_column_text(stmt, 3);
+        int sender_id = sqlite3_column_int(stmt, 4);
+
+        const char* prefix = "";
+        if (sender_id == *client_id)
+            prefix = "You: ";
+
+        char chat[BUFFER_SIZE];
+        snprintf(chat, sizeof(chat), "\n(%s) [%d] %s | %s%.16s...", created_at, id, username, prefix, message);
+
+        chatsSize += strlen(chat);
+        chats = realloc(chats, chatsSize);
+        strcat(chats, chat);
+    }
+    sqlite3_finalize(stmt);
+    
+    pthread_mutex_unlock(&g_chats_mutex);
+    pthread_mutex_unlock(&g_users_mutex);
+
+    if (chatsSize == sizeof(CHATS))
+    {
+        chats = realloc(chats, sizeof(CHATS_FAILED));
+        strcpy(chats, CHATS_FAILED);
     }
     else
     {
-        pthread_mutex_unlock(&g_chats_mutex);
+        chats = realloc(chats, chatsSize + sizeof(CHATS_SUFFIX) - 1);
+        strcat(chats, CHATS_SUFFIX);
+    }
+
+    if (rc == SQLITE_DONE)
+        return chats;
+    else
+    {
+        free(chats);
+        printf("[server] Eroare la sqlite3_step() la friends\n");
+        return SQL_ERROR;
+    }
+}
+
+const char* showchatCommand(const char* username, int* client_id)
+{
+    if (*client_id == LOGGED_OUT)
         return NOT_LOGGED;
+
+    char* endptr;
+    int friendID = strtol(username, &endptr, 10);
+    int rc;
+
+    if (*endptr != '\0') // userul a dat un username nu un id si facem rost de id dupa username
+    {
+        friendID = usernameToId(username);
+        if (friendID == -1)
+            return ADD_FAILED;
+        else if (friendID == -2)
+            return SQL_ERROR;
+    }
+    else
+    {
+        if (!userExists(friendID))
+            return ADD_FAILED;
+    }
+
+    if (*client_id == friendID)
+        return SHOWCHAT_SELF;
+    
+    sqlite3_stmt* stmt;
+    const char* sql_select = "SELECT message, created_at, sender_id FROM messages "
+                                "WHERE (sender_id = ? AND receiver_id = ?) OR (sender_id = ? AND receiver_id = ?) "
+                                "ORDER BY created_at ASC";
+    rc = sqlite3_prepare_v2(db, sql_select, -1, &stmt, 0);
+    if (rc != SQLITE_OK)
+    {
+        printf("[server] Eroare sql_prepare() la friends\n");
+        return SQL_ERROR;
+    }
+    sqlite3_bind_int(stmt, 1, *client_id);
+    sqlite3_bind_int(stmt, 2, friendID);
+    sqlite3_bind_int(stmt, 3, friendID);
+    sqlite3_bind_int(stmt, 4, *client_id);
+
+    unsigned char* friendUsername = idToUsername(friendID);
+    int initSize;
+    int chatsSize = initSize = sizeof(SHOWCHAT) + strlen(friendUsername) + 1;
+    char* chats = malloc(chatsSize);
+    strcpy(chats, SHOWCHAT);
+    strcat(strcat(chats, friendUsername), ":");
+
+    pthread_mutex_lock(&g_chats_mutex);
+
+    while ((rc = sqlite3_step(stmt)) == SQLITE_ROW)
+    {
+        int id;
+        const unsigned char* username;
+        const unsigned char* message = sqlite3_column_text(stmt, 0);
+        const unsigned char* created_at = sqlite3_column_text(stmt, 1);
+        int sender_id = sqlite3_column_int(stmt, 2);
+
+        if (sender_id == *client_id)
+        {
+            id = *client_id;
+            username = "You: ";
+        }
+        else
+        {
+            id = friendID;
+            username = friendUsername;
+        }
+
+        char chat[BUFFER_SIZE];
+        snprintf(chat, sizeof(chat), "\n(%s) [%d] %s | %s", created_at, id, username, message);
+
+        chatsSize += strlen(chat);
+        chats = realloc(chats, chatsSize);
+        strcat(chats, chat);
+    }
+    sqlite3_finalize(stmt);
+    
+    pthread_mutex_unlock(&g_chats_mutex);
+
+    free(friendUsername);
+
+    if (chatsSize == initSize)
+    {
+        chats = realloc(chats, sizeof(CHATS_FAILED));
+        strcpy(chats, CHATS_FAILED);
+    }
+
+    if (rc == SQLITE_DONE)
+        return chats;
+    else
+    {
+        free(chats);
+        printf("[server] Eroare la sqlite3_step() la friends\n");
+        return SQL_ERROR;
     }
 }
 

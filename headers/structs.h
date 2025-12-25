@@ -18,4 +18,9 @@ enum friendType
     regular_friend, close_friend
 };
 
+enum postType
+{
+    public_post, regular_post, close_post
+};
+
 sqlite3 *db;

@@ -68,29 +68,42 @@
 #define FRIENDS_FAILED "NO FRIENDS ADDED"
 #define FRIENDS "\nFRIENDS:"
 
-#define FRIENDTYPE_COMMAND "FRIENDTYPE" //
+#define FRIENDTYPE_COMMAND "FRIENDTYPE"
 #define FRIENDTYPE_ARGC 2
 #define FRIENDTYPE_SUCCESS "FRIEND TYPE CHANGED"
 #define FRIENDTYPE_FAILED "NOT FRIENDS"
 #define FRIENDTYPE_SELF "CAN'T CHANGE SELF FRIENDTYPE"
 #define INVALID_FRIEND_TYPE "INVALID FRIEND TYPE (REGULAR/CLOSE)"
 
-#define POST_COMMAND "POST" //
+#define POST_COMMAND "POST"
 #define POST_ARGC 2
 #define POST_SUCCESS "POSTED SUCCESSFULLY"
 #define POST_FAILED "POST FAILED"
+#define POST_PUBLIC "PUBLIC"
+#define POST_REGULAR REGULAR_FRIEND
+#define POST_CLOSE CLOSE_FRIEND
+#define INVALID_POST_TYPE "INVALID POST TYPE (PUBLIC/REGULAR/CLOSE)"
 
-#define VIEW_COMMAND "VIEW" //
-#define VIEW_ARGC 0
+#define POSTS_COMMAND "POSTS"
+#define POSTS_ARGC 0
+#define POSTS "\nPOSTS:"
+#define POSTS_FAILED "\nNO POSTS AVAILABLE"
 
-#define CHAT_COMMAND "CHAT" //
+#define CHAT_COMMAND "CHAT"
 #define CHAT_ARGC 2
+#define CHAT_SELF "CAN'T MESSAGE SELF"
+#define CHAT_SUCCESS "CHAT SENT"
 
 #define CHATS_COMMAND "CHATS" //
 #define CHATS_ARGC 0
+#define CHATS "\nAVAILABLE CHATS:"
+#define CHATS_SUFFIX "\nUSE SHOWCHAT <user_id/username> to see the chat with the given user_id/username"
+#define CHATS_FAILED "\nNO CHATS AVAILABLE"
 
-#define SHOWCHAT_COMMAND "SHOWCHAT" //
+#define SHOWCHAT_COMMAND "SHOWCHAT"
 #define SHOWCHAT_ARGC 1
+#define SHOWCHAT_SELF CHAT_SELF
+#define SHOWCHAT "\nCHAT WITH "
 
 #define GROUPCHAT_COMMAND "GROUPCHAT" //
 #define GROUPCHAT_ARGC 2
@@ -122,19 +135,19 @@
     FRIENDS - Shows all friends of the logged in user.\n\
     FRIENDTYPE <user_id/username> REGULAR/CLOSE - Changes provided user's friend type to regular/close\n\
     POST PUBLIC/REGULAR/CLOSE <message> - Posts the given message on your account with the given privacy.\n\
-    VIEW - Shows all the posts available.\n\
+    POSTS - Shows all the posts available.\n\
     CHAT <user_id/username> <message> - Sends the given message to the given user_id/username.\n\
     CHATS - Shows the available chats (minimum 1 message sent/received).\n\
-    SHOWCHAT <used_id/username> - Shows the chat with the given user_id/username.\n\
+    SHOWCHAT <user_id/username> - Shows the chat with the given user_id/username.\n\
     CREATEGROUP <groupname> - Creates a group with the given name.\n\
     INVITE <user_id/username> <group_id/groupname> - Invites the given user_id/username to the given group_id/groupname.\n\
-    INVITES - Shows all group invites.\n\
     KICK <user_id/username> <group_id/groupname> - Kicks the given user_id/username from the given group_id/groupname.\n\
-    ACCEPTGROUP <group_id/groupname> - Accepts the invite to the given group_id/username.\n\
+    LEAVE <group_id/groupname> - Leaves group with given group_id/groupname>.\n\
     GROUPCHAT <group_id/groupname> <message> - Sends the given message to the given group_id/groupname.\n\
     GROUPCHATS - Shows the available group chats (minimum 1 message sent/received).\n\
     SHOWGROUPCHAT <group_id/groupname> - Shows the chat of the given group_id/groupname.\n\
     PRIVACY PUBLIC/PRIVATE - Sets the profile's and posts' privacy to the given privacy.\n\
+    USER - Shows info about logged user.\n\
     BAN <user_id/username> <reason> - Bans the user that matches the given user_id/username. Only for admins!\
 "
 
