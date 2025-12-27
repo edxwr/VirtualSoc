@@ -9,6 +9,8 @@
 #include <string.h>
 #include <stdio.h>
 
+#define RET_DYN(s) return generateOutput(s)
+
 pthread_mutex_t g_users_mutex = PTHREAD_MUTEX_INITIALIZER;
 pthread_mutex_t g_friends_mutex = PTHREAD_MUTEX_INITIALIZER;
 pthread_mutex_t g_posts_mutex = PTHREAD_MUTEX_INITIALIZER;
@@ -17,11 +19,86 @@ pthread_mutex_t g_groups_mutex = PTHREAD_MUTEX_INITIALIZER;
 pthread_mutex_t g_groupmembers_mutex = PTHREAD_MUTEX_INITIALIZER;
 pthread_mutex_t g_groupmessages_mutex = PTHREAD_MUTEX_INITIALIZER;
 
-const char* generateOutput(const char* buffer)
+char* generateOutput(const char* buffer)
 {
-    char* bufferOut = malloc(sizeof(OK_RECEIVED) + strlen(buffer));
-    sprintf(bufferOut, "%s%s", OK_RECEIVED, buffer);
+    if (buffer == NULL)
+        return NULL;
+    
+    char* bufferOut = malloc(strlen(buffer) + 1);
+    strcpy(bufferOut, buffer);
     return bufferOut;
+}
+
+void randomOwnerForOwnedGroups(int id)
+{
+    sqlite3_stmt* stmt;
+    const char* sql = "SELECT id FROM groups where owner_id = ?";
+    if (sqlite3_prepare_v2(db, sql, -1, &stmt, 0) == SQLITE_OK)
+    {
+        sqlite3_bind_int(stmt, 1, id);
+
+        pthread_mutex_lock(&g_groups_mutex);
+
+        while (sqlite3_step(stmt) == SQLITE_ROW)
+        {
+            int groupID = sqlite3_column_int(stmt, 0);
+            int newOwnerID = -1;
+            sqlite3_stmt* stmt2;
+            const char* sql2 = "SELECT user_id FROM group_members WHERE group_id = ? LIMIT 1";
+            sqlite3_prepare_v2(db, sql2, -1, &stmt2, 0);
+            sqlite3_bind_int(stmt2, 1, groupID);
+
+            pthread_mutex_lock(&g_groupmembers_mutex);
+
+            if (sqlite3_step(stmt2) == SQLITE_ROW)
+                newOwnerID = sqlite3_column_int(stmt2, 0);
+            sqlite3_finalize(stmt2);
+
+            pthread_mutex_unlock(&g_groupmembers_mutex);
+
+            if (newOwnerID == -1)
+            {
+                sql2 = "DELETE FROM groups WHERE id = ?";
+                sqlite3_prepare_v2(db, sql2, -1, &stmt2, 0);
+                sqlite3_bind_int(stmt2, 1, groupID);  //fara mutex lock/unlock ca e deja
+                sqlite3_step(stmt2);
+                sqlite3_finalize(stmt2);
+            }
+            else
+            {
+                sql2 = "UPDATE groups SET owner_id = ? WHERE id = ?";
+                sqlite3_prepare_v2(db, sql2, -1, &stmt2, 0);
+                sqlite3_bind_int(stmt2, 1, newOwnerID);
+                sqlite3_bind_int(stmt2, 2, groupID);
+                sqlite3_step(stmt2);
+                sqlite3_finalize(stmt2);
+            }
+        }
+        sqlite3_finalize(stmt);
+
+        pthread_mutex_unlock(&g_groups_mutex);
+    }
+}
+
+int isUserAdmin(int id)
+{
+    int isAdmin = -1;
+    sqlite3_stmt* check;
+    const char* sql = "SELECT role FROM users WHERE id = ?";
+    if (sqlite3_prepare_v2(db, sql, -1, &check, 0) == SQLITE_OK)
+    {
+        sqlite3_bind_int(check, 1, id);
+
+        pthread_mutex_lock(&g_users_mutex);
+
+        if (sqlite3_step(check) == SQLITE_ROW)
+            isAdmin = 1;
+        sqlite3_finalize(check);
+
+        pthread_mutex_unlock(&g_users_mutex);
+    }
+
+    return isAdmin;
 }
 
 int userExists(int id)
@@ -216,7 +293,7 @@ unsigned char* idToUsername(int id)
     if (rc != SQLITE_OK)
     {
         printf("[server] Eroare sql_prepare()\n");
-        return SQL_ERROR;
+        RET_DYN(SQL_ERROR);
     }
     sqlite3_bind_int(useridStmt, 1, id);
     pthread_mutex_lock(&g_users_mutex);
@@ -235,7 +312,7 @@ unsigned char* idToUsername(int id)
         printf("[server] Eroare la sqlite3_step()\n");
         sqlite3_finalize(useridStmt);
         pthread_mutex_unlock(&g_users_mutex);
-        return SQL_ERROR;
+        RET_DYN(SQL_ERROR);
     }
 }
 
@@ -248,7 +325,7 @@ unsigned char* idToGroupname(int id)
     if (rc != SQLITE_OK)
     {
         printf("[server] Eroare sql_prepare()\n");
-        return SQL_ERROR;
+        RET_DYN(SQL_ERROR);
     }
     sqlite3_bind_int(groupidStmt, 1, id);
     pthread_mutex_lock(&g_groups_mutex);
@@ -267,25 +344,25 @@ unsigned char* idToGroupname(int id)
         printf("[server] Eroare la sqlite3_step()\n");
         sqlite3_finalize(groupidStmt);
         pthread_mutex_unlock(&g_groups_mutex);
-        return SQL_ERROR;
+        RET_DYN(SQL_ERROR);
     }
 }
 
 /*                          start of commands                           */
 
-const char* registerCommand(const char* username, const char* password, const char* type)
+char* registerCommand(const char* username, const char* password, const char* type)
 {
     if (strlen(username) >= usernameLength)
     {
-        return USERNAME_TOO_LONG;
+        RET_DYN(USERNAME_TOO_LONG);
     }
     if (strlen(password) >= passwordLength)
     {
-        return PASSWORD_TOO_LONG;
+        RET_DYN(PASSWORD_TOO_LONG);
     }
     if (strcmp(type, REGULAR_USER) != 0 && strcmp(type, ADMIN_USER) != 0)
     {
-        return INVALID_TYPE;
+        RET_DYN(INVALID_TYPE);
     }
 
     int int_type = 0;
@@ -300,7 +377,7 @@ const char* registerCommand(const char* username, const char* password, const ch
     if (rc != SQLITE_OK)
     {
         printf("[server] Eroare sql_prepare() la register\n");
-        return SQL_ERROR;
+        RET_DYN(SQL_ERROR);
     }
 
     sqlite3_bind_text(stmt, 1, username, -1, SQLITE_STATIC);
@@ -315,29 +392,29 @@ const char* registerCommand(const char* username, const char* password, const ch
     pthread_mutex_unlock(&g_users_mutex);
 
     if (rc == SQLITE_DONE)
-        return REGISTER_SUCCESS;
+        RET_DYN(REGISTER_SUCCESS);
     else if (rc == SQLITE_CONSTRAINT)
-        return REGISTER_FAILED;
+        RET_DYN(REGISTER_FAILED);
     else
     {
         printf("[server] Eroare la sqlite3_step() la register\n");
-        return SQL_ERROR;
+        RET_DYN(SQL_ERROR);
     }
 }
 
-const char* loginCommand(const char* username, const char* password, int* client_id)
+char* loginCommand(const char* username, const char* password, int* client_id)
 {
     if (*client_id != LOGGED_OUT)
     {
-        return LOGIN_ALREADY;
+        RET_DYN(LOGIN_ALREADY);
     }
     if (strlen(username) >= usernameLength)
     {
-        return USERNAME_TOO_LONG;
+        RET_DYN(USERNAME_TOO_LONG);
     }
     if (strlen(password) >= passwordLength)
     {
-        return PASSWORD_TOO_LONG;
+        RET_DYN(PASSWORD_TOO_LONG);
     }
 
     sqlite3_stmt* stmt;
@@ -346,7 +423,7 @@ const char* loginCommand(const char* username, const char* password, int* client
     if (rc != SQLITE_OK)
     {
         printf("[server] Eroare sql_prepare() la login\n");
-        return SQL_ERROR;
+        RET_DYN(SQL_ERROR);
     }
 
     sqlite3_bind_text(stmt, 1, username, -1, SQLITE_STATIC);
@@ -360,41 +437,41 @@ const char* loginCommand(const char* username, const char* password, int* client
         *client_id = sqlite3_column_int(stmt, 0);
         sqlite3_finalize(stmt);
         pthread_mutex_unlock(&g_users_mutex);
-        return LOGIN_SUCCESS;
+        RET_DYN(LOGIN_SUCCESS);
     }
     else if (rc == SQLITE_DONE)
     {
         sqlite3_finalize(stmt);
         pthread_mutex_unlock(&g_users_mutex);
-        return LOGIN_FAILED;
+        RET_DYN(LOGIN_FAILED);
     }
     else
     {
         printf("[server] Eroare la sqlite3_step() la login\n");
         sqlite3_finalize(stmt);
         pthread_mutex_unlock(&g_users_mutex);
-        return SQL_ERROR;
+        RET_DYN(SQL_ERROR);
     }
     
 }
 
-const char* logoutCommand(int* client_id)
+char* logoutCommand(int* client_id)
 {
     if (*client_id != LOGGED_OUT)
     {
         *client_id = LOGGED_OUT;
-        return LOGOUT_SUCCESS;
+        RET_DYN(LOGOUT_SUCCESS);
     }
     else
     {
-        return NOT_LOGGED;
+        RET_DYN(NOT_LOGGED);
     }
 }
 
-const char* addCommand(const char* username, int* client_id)
+char* addCommand(const char* username, int* client_id)
 {
     if (*client_id == LOGGED_OUT)
-        return NOT_LOGGED;
+        RET_DYN(NOT_LOGGED);
     
     char* endptr;
     int friendID = strtol(username, &endptr, 10);
@@ -404,18 +481,18 @@ const char* addCommand(const char* username, int* client_id)
     {
         friendID = usernameToId(username);
         if (friendID == -1)
-            return ADD_FAILED;
+            RET_DYN(ADD_FAILED);
         else if (friendID == -2)
-            return SQL_ERROR;
+            RET_DYN(SQL_ERROR);
     }
     else
     {
         if (!userExists(friendID))
-            return ADD_FAILED;
+            RET_DYN(ADD_FAILED);
     }
 
     if (*client_id == friendID)
-        return ADD_SELF;
+        RET_DYN(ADD_SELF);
     
     sqlite3_stmt* check_added;
     const char* sql_check = "SELECT status, user_id FROM friends WHERE ((user_id = ? AND friend_id = ?) OR (user_id = ? AND friend_id = ?))";
@@ -423,7 +500,7 @@ const char* addCommand(const char* username, int* client_id)
     if (rc != SQLITE_OK)
     {
         printf("[server] Eroare sql_prepare()\n");
-        return SQL_ERROR;
+        RET_DYN(SQL_ERROR);
     }
 
     sqlite3_bind_int(check_added, 1, *client_id);
@@ -446,13 +523,13 @@ const char* addCommand(const char* username, int* client_id)
     if (rc == SQLITE_ROW)
     {
         if (status == 1)
-            return ADD_ALREADY_FRIENDS;
+            RET_DYN(ADD_ALREADY_FRIENDS);
         else
         {
             if (sender == *client_id)
-                return ADD_YOU;
+                RET_DYN(ADD_YOU);
             else
-                return ADD_OTHER;
+                RET_DYN(ADD_OTHER);
         }
     }
     
@@ -462,7 +539,7 @@ const char* addCommand(const char* username, int* client_id)
     if (rc != SQLITE_OK)
     {
         printf("[server] Eroare sql_prepare()\n");
-        return SQL_ERROR;
+        RET_DYN(SQL_ERROR);
     }
 
     sqlite3_bind_int(stmt, 1, *client_id);
@@ -476,20 +553,20 @@ const char* addCommand(const char* username, int* client_id)
     pthread_mutex_unlock(&g_friends_mutex);
 
     if (rc == SQLITE_DONE)
-        return ADD_SUCCESS;
+        RET_DYN(ADD_SUCCESS);
     else if (rc == SQLITE_CONSTRAINT)
-        return ADD_FAILED;
+        RET_DYN(ADD_FAILED);
     else
     {
         printf("[server] Eroare la sqlite3_step() la add\n");
-        return SQL_ERROR;
+        RET_DYN(SQL_ERROR);
     }
 }
 
-const char* acceptCommand(const char* username, int* client_id)
+char* acceptCommand(const char* username, int* client_id)
 {
     if (*client_id == LOGGED_OUT)
-        return NOT_LOGGED;
+        RET_DYN(NOT_LOGGED);
     
     char* endptr;
     int friendID = strtol(username, &endptr, 10);
@@ -499,13 +576,13 @@ const char* acceptCommand(const char* username, int* client_id)
     {
         friendID = usernameToId(username);
         if (friendID == -1)
-            return ADD_FAILED;
+            RET_DYN(ADD_FAILED);
         else if (friendID == -2)
-            return SQL_ERROR;
+            RET_DYN(SQL_ERROR);
     }
 
     if (*client_id == friendID)
-        return REQUEST_SELF;
+        RET_DYN(REQUEST_SELF);
     
     sqlite3_stmt* stmt;
     const char* sql_update = "UPDATE friends SET status = 1 WHERE user_id = ? AND friend_id = ? AND status = 0";
@@ -513,7 +590,7 @@ const char* acceptCommand(const char* username, int* client_id)
     if (rc != SQLITE_OK)
     {
         printf("[server] Eroare sql_prepare() la add\n");
-        return SQL_ERROR;
+        RET_DYN(SQL_ERROR);
     }
 
     sqlite3_bind_int(stmt, 1, friendID);
@@ -530,20 +607,20 @@ const char* acceptCommand(const char* username, int* client_id)
     pthread_mutex_unlock(&g_friends_mutex);
 
     if (modifyCount > 0 && rc == SQLITE_DONE)
-        return REQUEST_ACCEPT_SUCCESS;
+        RET_DYN(REQUEST_ACCEPT_SUCCESS);
     else if (modifyCount == 0 && rc == SQLITE_DONE)
-        return REQUEST_FAILED;
+        RET_DYN(REQUEST_FAILED);
     else
     {
         printf("[server] Eroare la sqlite3_step() la add\n");
-        return SQL_ERROR;
+        RET_DYN(SQL_ERROR);
     }
 }
 
-const char* declineCommand(const char* username, int* client_id)
+char* declineCommand(const char* username, int* client_id)
 {
     if (*client_id == LOGGED_OUT)
-        return NOT_LOGGED;
+        RET_DYN(NOT_LOGGED);
     
     char* endptr;
     int friendID = strtol(username, &endptr, 10);
@@ -553,13 +630,13 @@ const char* declineCommand(const char* username, int* client_id)
     {
         friendID = usernameToId(username);
         if (friendID == -1)
-            return ADD_FAILED;
+            RET_DYN(ADD_FAILED);
         else if (friendID == -2)
-            return SQL_ERROR;
+            RET_DYN(SQL_ERROR);
     }
 
     if (*client_id == friendID)
-        return REQUEST_SELF;
+        RET_DYN(REQUEST_SELF);
 
     sqlite3_stmt* stmt;
     const char* sql_delete = "DELETE FROM friends WHERE ((user_id = ? AND friend_id = ?) OR (user_id = ? AND friend_id = ?)) AND status = 0";
@@ -567,7 +644,7 @@ const char* declineCommand(const char* username, int* client_id)
     if (rc != SQLITE_OK)
     {
         printf("[server] Eroare sql_prepare() la add\n");
-        return SQL_ERROR;
+        RET_DYN(SQL_ERROR);
     }
 
     sqlite3_bind_int(stmt, 1, friendID);
@@ -586,20 +663,20 @@ const char* declineCommand(const char* username, int* client_id)
     pthread_mutex_unlock(&g_friends_mutex);
 
     if (modifyCount > 0 && rc == SQLITE_DONE)
-        return REQUEST_DECLINE_SUCCESS;
+        RET_DYN(REQUEST_DECLINE_SUCCESS);
     else if (rc == SQLITE_DONE)
-        return REQUEST_FAILED;
+        RET_DYN(REQUEST_FAILED);
     else
     {
         printf("[server] Eroare la sqlite3_step() la add\n");
-        return SQL_ERROR;
+        RET_DYN(SQL_ERROR);
     }
 }
 
-const char* requestsCommand(int* client_id)
+char* requestsCommand(int* client_id)
 {
     if (*client_id == LOGGED_OUT)
-        return NOT_LOGGED;
+        RET_DYN(NOT_LOGGED);
     
     int rc;
     
@@ -609,7 +686,7 @@ const char* requestsCommand(int* client_id)
     if (rc != SQLITE_OK)
     {
         printf("[server] Eroare sql_prepare() la REQUESTS\n");
-        return SQL_ERROR;
+        RET_DYN(SQL_ERROR);
     }
     sqlite3_bind_int(stmt, 1, *client_id);
 
@@ -652,7 +729,7 @@ const char* requestsCommand(int* client_id)
     {
         free(inrequests);
         printf("[server] Eroare sql_prepare() la REQUESTS2\n");
-        return SQL_ERROR;
+        RET_DYN(SQL_ERROR);
     }
     sqlite3_bind_int(stmt, 1, *client_id);
 
@@ -687,31 +764,39 @@ const char* requestsCommand(int* client_id)
         strcpy(outrequests, REQUESTS_NONE_OUT);
     }
 
-    char* requests = malloc(inrequestsSize + outrequestsSize - 1);
+    int requestsSize = inrequestsSize + outrequestsSize - 1;
+    char* requests = malloc(requestsSize);
     strcpy(requests, inrequests);
     strcat(requests, outrequests);
     free(inrequests);
     free(outrequests);
 
-    if (rc == SQLITE_DONE && (inrequestsSize > sizeof(REQUESTS_NONE_IN) || outrequestsSize > sizeof(REQUESTS_NONE_OUT)))
-        return requests;
-    else if (rc == SQLITE_DONE && inrequestsSize == sizeof(REQUESTS_NONE_IN) && outrequestsSize == sizeof(REQUESTS_NONE_OUT))
+    if (inrequestsSize == sizeof(REQUESTS_NONE_IN) && outrequestsSize == sizeof(REQUESTS_NONE_OUT))
     {
-        free(requests);
-        return REQUESTS_NONE;
+        requests = realloc(requests, sizeof(REQUESTS_NONE));
+        requestsSize = sizeof(REQUESTS_NONE);
+        strcpy(requests, REQUESTS_NONE);
     }
+    else
+    {
+        requests = realloc(requests, requestsSize + sizeof(REQUESTS_SUFFIX) - 1);
+        strcat(requests, REQUESTS_SUFFIX);
+    }
+
+    if (rc == SQLITE_DONE)
+        return requests;
     else
     {
         free(requests);
         printf("[server] Eroare la sqlite3_step() la REQUESTS3\n");
-        return SQL_ERROR;
+        RET_DYN(SQL_ERROR);
     }
 }
 
-const char* removeCommand(const char* username, int* client_id)
+char* removeCommand(const char* username, int* client_id)
 {
     if (*client_id == LOGGED_OUT)
-        return NOT_LOGGED;
+        RET_DYN(NOT_LOGGED);
     
     char* endptr;
     int friendID = strtol(username, &endptr, 10);
@@ -721,18 +806,18 @@ const char* removeCommand(const char* username, int* client_id)
     {
         friendID = usernameToId(username);
         if (friendID == -1)
-            return ADD_FAILED;
+            RET_DYN(ADD_FAILED);
         else if (friendID == -2)
-            return SQL_ERROR;
+            RET_DYN(SQL_ERROR);
     }
     else
     {
         if (!userExists(friendID))
-            return ADD_FAILED;
+            RET_DYN(ADD_FAILED);
     }
 
     if (*client_id == friendID)
-        return REMOVE_SELF;
+        RET_DYN(REMOVE_SELF);
     
     sqlite3_stmt* remove_friend;
     const char* sql_remove = "DELETE FROM friends WHERE ((user_id = ? AND friend_id = ?) OR (user_id = ? AND friend_id = ?)) AND status = 1";
@@ -740,7 +825,7 @@ const char* removeCommand(const char* username, int* client_id)
     if (rc != SQLITE_OK)
     {
         printf("[server] Eroare sql_prepare()\n");
-        return SQL_ERROR;
+        RET_DYN(SQL_ERROR);
     }
 
     sqlite3_bind_int(remove_friend, 1, *client_id);
@@ -759,20 +844,20 @@ const char* removeCommand(const char* username, int* client_id)
     pthread_mutex_unlock(&g_friends_mutex);
 
     if (modifyCount > 0 && rc == SQLITE_DONE)
-        return REMOVE_SUCCESS;
+        RET_DYN(REMOVE_SUCCESS);
     else if (rc == SQLITE_DONE)
-        return REMOVE_FAILED;
+        RET_DYN(REMOVE_FAILED);
     else
     {
         printf("[server] Eroare la sqlite3_step() la remove\n");
-        return SQL_ERROR;
+        RET_DYN(SQL_ERROR);
     }
 }
 
-const char* friendsCommand(int* client_id)
+char* friendsCommand(int* client_id)
 {
     if (*client_id == LOGGED_OUT)
-        return NOT_LOGGED;
+        RET_DYN(NOT_LOGGED);
     
     int rc;
     
@@ -782,7 +867,7 @@ const char* friendsCommand(int* client_id)
     if (rc != SQLITE_OK)
     {
         printf("[server] Eroare sql_prepare() la friends\n");
-        return SQL_ERROR;
+        RET_DYN(SQL_ERROR);
     }
     sqlite3_bind_int(stmt, 1, *client_id);
     sqlite3_bind_int(stmt, 2, *client_id);
@@ -816,8 +901,12 @@ const char* friendsCommand(int* client_id)
     if (friendsSize == sizeof(FRIENDS))
     {
         friends = realloc(friends, sizeof(FRIENDS_FAILED));
+        friendsSize = sizeof(FRIENDS_FAILED);
         strcpy(friends, FRIENDS_FAILED);
     }
+
+    friends = realloc(friends, friendsSize + sizeof(FRIENDS_SUFFIX) - 1);
+    strcat(friends, FRIENDS_SUFFIX);
 
     if (rc == SQLITE_DONE)
         return friends;
@@ -825,14 +914,14 @@ const char* friendsCommand(int* client_id)
     {
         free(friends);
         printf("[server] Eroare la sqlite3_step() la friends\n");
-        return SQL_ERROR;
+        RET_DYN(SQL_ERROR);
     }
 }
 
-const char* friendtypeCommand(const char* username, const char* type, int* client_id)
+char* friendtypeCommand(const char* username, const char* type, int* client_id)
 {
     if (*client_id == LOGGED_OUT)
-        return NOT_LOGGED;
+        RET_DYN(NOT_LOGGED);
 
     char* endptr;
     int friendID = strtol(username, &endptr, 10);
@@ -842,22 +931,22 @@ const char* friendtypeCommand(const char* username, const char* type, int* clien
     {
         friendID = usernameToId(username);
         if (friendID == -1)
-            return ADD_FAILED;
+            RET_DYN(ADD_FAILED);
         else if (friendID == -2)
-            return SQL_ERROR;
+            RET_DYN(SQL_ERROR);
     }
     else
     {
         if (!userExists(friendID))
-            return ADD_FAILED;
+            RET_DYN(ADD_FAILED);
     }
 
     if (*client_id == friendID)
-        return FRIENDTYPE_SELF;
+        RET_DYN(FRIENDTYPE_SELF);
 
     if (strcmp(type, REGULAR_FRIEND) != 0 && strcmp(type, CLOSE_FRIEND) != 0)
     {
-        return INVALID_FRIEND_TYPE;
+        RET_DYN(INVALID_FRIEND_TYPE);
     }
 
     int int_type = 0;
@@ -872,7 +961,7 @@ const char* friendtypeCommand(const char* username, const char* type, int* clien
     if (rc != SQLITE_OK)
     {
         printf("[server] Eroare sql_prepare() la friendtype\n");
-        return SQL_ERROR;
+        RET_DYN(SQL_ERROR);
     }
 
     sqlite3_bind_int(stmt, 1, int_type);
@@ -892,20 +981,20 @@ const char* friendtypeCommand(const char* username, const char* type, int* clien
     pthread_mutex_unlock(&g_friends_mutex);
 
     if (modifyCount > 0 && rc == SQLITE_DONE)
-        return FRIENDTYPE_SUCCESS;
+        RET_DYN(FRIENDTYPE_SUCCESS);
     else if (rc == SQLITE_DONE)
-        return FRIENDTYPE_FAILED;
+        RET_DYN(FRIENDTYPE_FAILED);
     else
     {
         printf("[server] Eroare la sqlite3_step() la friendtype\n");
-        return SQL_ERROR;
+        RET_DYN(SQL_ERROR);
     }
 }
 
-const char* postCommand(const char* privacy, const char* message, int* client_id)
+char* postCommand(const char* privacy, const char* message, int* client_id)
 {
     if (*client_id == LOGGED_OUT)
-        return NOT_LOGGED;
+        RET_DYN(NOT_LOGGED);
     
     int rc;
     int int_privacy;
@@ -916,7 +1005,7 @@ const char* postCommand(const char* privacy, const char* message, int* client_id
     else if (strcmp(privacy, POST_CLOSE) == 0)
         int_privacy = close_post;
     else
-        return INVALID_POST_TYPE;
+        RET_DYN(INVALID_POST_TYPE);
 
     sqlite3_stmt* stmt;
     const char* sql_insert = "INSERT into POSTS (user_id, content, visibility) VALUES (?, ?, ?)";
@@ -924,7 +1013,7 @@ const char* postCommand(const char* privacy, const char* message, int* client_id
     if (rc != SQLITE_OK)
     {
         printf("[server] Eroare sql_prepare()\n");
-        return SQL_ERROR;
+        RET_DYN(SQL_ERROR);
     }
 
     sqlite3_bind_int(stmt, 1, *client_id);
@@ -939,15 +1028,15 @@ const char* postCommand(const char* privacy, const char* message, int* client_id
     pthread_mutex_unlock(&g_posts_mutex);
 
     if (rc == SQLITE_DONE)
-        return POST_SUCCESS;
+        RET_DYN(POST_SUCCESS);
     else
     {
         printf("[server] Eroare sqlite3_step() la post\n");
-        return SQL_ERROR;
+        RET_DYN(SQL_ERROR);
     }
 }
 
-const char* postsCommand(int* client_id)
+char* postsCommand(int* client_id)
 {   
     int rc;
     sqlite3_stmt* stmt;
@@ -977,7 +1066,7 @@ const char* postsCommand(int* client_id)
     if (rc != SQLITE_OK)
     {
         printf("[server] Eroare sql_prepare() la friends\n");
-        return SQL_ERROR;
+        RET_DYN(SQL_ERROR);
     }
 
     int postsSize = sizeof(POSTS);
@@ -1020,8 +1109,12 @@ const char* postsCommand(int* client_id)
     if (postsSize == sizeof(POSTS))
     {
         posts = realloc(posts, sizeof(POSTS_FAILED));
+        postsSize = sizeof(POSTS_FAILED);
         strcpy(posts, POSTS_FAILED);
     }
+
+    posts = realloc(posts, postsSize + sizeof(POSTS_SUFFIX) - 1);
+    strcat(posts, POSTS_SUFFIX);
 
     if (rc == SQLITE_DONE)
         return posts;
@@ -1029,14 +1122,14 @@ const char* postsCommand(int* client_id)
     {
         free(posts);
         printf("[server] Eroare la sqlite3_step() la friends\n");
-        return SQL_ERROR;
+        RET_DYN(SQL_ERROR);
     }
 }
 
-const char* chatCommand(const char* username, const char* message, int* client_id)
+char* chatCommand(const char* username, const char* message, int* client_id)
 {
     if (*client_id == LOGGED_OUT)
-        return NOT_LOGGED;
+        RET_DYN(NOT_LOGGED);
     
     char* endptr;
     int receiverID = strtol(username, &endptr, 10);
@@ -1046,18 +1139,18 @@ const char* chatCommand(const char* username, const char* message, int* client_i
     {
         receiverID = usernameToId(username);
         if (receiverID == -1)
-            return ADD_FAILED;
+            RET_DYN(ADD_FAILED);
         else if (receiverID == -2)
-            return SQL_ERROR;
+            RET_DYN(SQL_ERROR);
     }
     else
     {
         if (!userExists(receiverID))
-            return ADD_FAILED;
+            RET_DYN(ADD_FAILED);
     }
 
     if (*client_id == receiverID)
-        return CHAT_SELF;
+        RET_DYN(CHAT_SELF);
     
     sqlite3_stmt* stmt;
     const char* sql_insert = "INSERT into messages (sender_id, receiver_id, message) VALUES (?, ?, ?)";
@@ -1065,7 +1158,7 @@ const char* chatCommand(const char* username, const char* message, int* client_i
     if (rc != SQLITE_OK)
     {
         printf("[server] Eroare sql_prepare()\n");
-        return SQL_ERROR;
+        RET_DYN(SQL_ERROR);
     }
 
     sqlite3_bind_int(stmt, 1, *client_id);
@@ -1080,18 +1173,18 @@ const char* chatCommand(const char* username, const char* message, int* client_i
     pthread_mutex_unlock(&g_chats_mutex);
 
     if (rc == SQLITE_DONE)
-        return CHAT_SUCCESS;
+        RET_DYN(CHAT_SUCCESS);
     else
     {
         printf("[server] Eroare sqlite3_step() la post\n");
-        return SQL_ERROR;
+        RET_DYN(SQL_ERROR);
     }
 }
 
-const char* chatsCommand(int* client_id)
+char* chatsCommand(int* client_id)
 {
     if (*client_id == LOGGED_OUT)
-        return NOT_LOGGED;
+        RET_DYN(NOT_LOGGED);
     
     int rc;
     
@@ -1107,7 +1200,7 @@ const char* chatsCommand(int* client_id)
     if (rc != SQLITE_OK)
     {
         printf("[server] Eroare sql_prepare() la friends\n");
-        return SQL_ERROR;
+        RET_DYN(SQL_ERROR);
     }
     sqlite3_bind_int(stmt, 1, *client_id);
     sqlite3_bind_int(stmt, 2, *client_id);
@@ -1162,14 +1255,14 @@ const char* chatsCommand(int* client_id)
     {
         free(chats);
         printf("[server] Eroare la sqlite3_step() la friends\n");
-        return SQL_ERROR;
+        RET_DYN(SQL_ERROR);
     }
 }
 
-const char* showchatCommand(const char* username, int* client_id)
+char* showchatCommand(const char* username, int* client_id)
 {
     if (*client_id == LOGGED_OUT)
-        return NOT_LOGGED;
+        RET_DYN(NOT_LOGGED);
 
     char* endptr;
     int friendID = strtol(username, &endptr, 10);
@@ -1179,18 +1272,18 @@ const char* showchatCommand(const char* username, int* client_id)
     {
         friendID = usernameToId(username);
         if (friendID == -1)
-            return ADD_FAILED;
+            RET_DYN(ADD_FAILED);
         else if (friendID == -2)
-            return SQL_ERROR;
+            RET_DYN(SQL_ERROR);
     }
     else
     {
         if (!userExists(friendID))
-            return ADD_FAILED;
+            RET_DYN(ADD_FAILED);
     }
 
     if (*client_id == friendID)
-        return SHOWCHAT_SELF;
+        RET_DYN(SHOWCHAT_SELF);
     
     sqlite3_stmt* stmt;
     const char* sql_select = "SELECT message, created_at, sender_id FROM messages "
@@ -1200,7 +1293,7 @@ const char* showchatCommand(const char* username, int* client_id)
     if (rc != SQLITE_OK)
     {
         printf("[server] Eroare sql_prepare() la friends\n");
-        return SQL_ERROR;
+        RET_DYN(SQL_ERROR);
     }
     sqlite3_bind_int(stmt, 1, *client_id);
     sqlite3_bind_int(stmt, 2, friendID);
@@ -1251,8 +1344,12 @@ const char* showchatCommand(const char* username, int* client_id)
     if (chatsSize == initSize)
     {
         chats = realloc(chats, sizeof(CHATS_FAILED));
+        chatsSize = sizeof(CHATS_FAILED);
         strcpy(chats, CHATS_FAILED);
     }
+
+    chats = realloc(chats, chatsSize + sizeof(SHOWCHAT_SUFFIX) - 1);
+    strcat(chats, SHOWCHAT_SUFFIX);
 
     if (rc == SQLITE_DONE)
         return chats;
@@ -1260,18 +1357,18 @@ const char* showchatCommand(const char* username, int* client_id)
     {
         free(chats);
         printf("[server] Eroare la sqlite3_step() la friends\n");
-        return SQL_ERROR;
+        RET_DYN(SQL_ERROR);
     }
 }
 
-const char* creategroupCommand(const char* groupname, int* client_id)
+char* creategroupCommand(const char* groupname, int* client_id)
 {
     if (*client_id == LOGGED_OUT)
-        return NOT_LOGGED;
+        RET_DYN(NOT_LOGGED);
     
     if (strlen(groupname) >= groupnameLength)
     {
-        return GROUPNAME_TOO_LONG;
+        RET_DYN(GROUPNAME_TOO_LONG);
     }
 
     sqlite3_stmt* stmt;
@@ -1280,7 +1377,7 @@ const char* creategroupCommand(const char* groupname, int* client_id)
     if (rc != SQLITE_OK)
     {
         printf("[server] Eroare sql_prepare() la register\n");
-        return SQL_ERROR;
+        RET_DYN(SQL_ERROR);
     }
 
     sqlite3_bind_text(stmt, 1, groupname, -1, SQLITE_STATIC);
@@ -1299,7 +1396,7 @@ const char* creategroupCommand(const char* groupname, int* client_id)
     if (rc != SQLITE_OK)
     {
         printf("[server] Eroare sql_prepare()\n");
-        return SQL_ERROR;
+        RET_DYN(SQL_ERROR);
     }
 
     sqlite3_bind_int(stmt, 1, *client_id);
@@ -1314,20 +1411,20 @@ const char* creategroupCommand(const char* groupname, int* client_id)
     
 
     if (rc == SQLITE_DONE)
-        return CREATEGROUP_SUCCESS;
+        RET_DYN(CREATEGROUP_SUCCESS);
     else if (rc == SQLITE_CONSTRAINT)
-        return CREATEGROUP_FAILED;
+        RET_DYN(CREATEGROUP_FAILED);
     else
     {
         printf("[server] Eroare la sqlite3_step() la register\n");
-        return SQL_ERROR;
+        RET_DYN(SQL_ERROR);
     }
 }
 
-const char* inviteCommand(const char* username, const char* groupname, int* client_id)
+char* inviteCommand(const char* username, const char* groupname, int* client_id)
 {
     if (*client_id == LOGGED_OUT)
-        return NOT_LOGGED;
+        RET_DYN(NOT_LOGGED);
     
     char* endptr;
     int friendID = strtol(username, &endptr, 10);
@@ -1337,18 +1434,18 @@ const char* inviteCommand(const char* username, const char* groupname, int* clie
     {
         friendID = usernameToId(username);
         if (friendID == -1)
-            return ADD_FAILED;
+            RET_DYN(ADD_FAILED);
         else if (friendID == -2)
-            return SQL_ERROR;
+            RET_DYN(SQL_ERROR);
     }
     else
     {
         if (!userExists(friendID))
-            return ADD_FAILED;
+            RET_DYN(ADD_FAILED);
     }
 
     if (*client_id == friendID)
-        return INVITE_SELF;
+        RET_DYN(INVITE_SELF);
 
     int groupID = strtol(groupname, &endptr, 10);
 
@@ -1356,18 +1453,18 @@ const char* inviteCommand(const char* username, const char* groupname, int* clie
     {
         groupID = groupnameToId(groupname, client_id);
         if (groupID == -1)
-            return INVITE_GROUPNOTEXIST;
+            RET_DYN(INVITE_GROUPNOTEXIST);
         else if (groupID == -2)
-            return SQL_ERROR;
+            RET_DYN(SQL_ERROR);
     }
     else
     {
         if (!groupExists(groupID))
-            return INVITE_GROUPNOTEXIST;
+            RET_DYN(INVITE_GROUPNOTEXIST);
     }
 
     if (!isUserInGroup(*client_id, groupID))
-        return INVITE_FAILED;
+        RET_DYN(INVITE_FAILED);
     
     sqlite3_stmt* stmt;
     const char* sql_insert = "INSERT INTO group_members (user_id, group_id) VALUES (?, ?)";
@@ -1375,7 +1472,7 @@ const char* inviteCommand(const char* username, const char* groupname, int* clie
     if (rc != SQLITE_OK)
     {
         printf("[server] Eroare sql_prepare()\n");
-        return SQL_ERROR;
+        RET_DYN(SQL_ERROR);
     }
 
     sqlite3_bind_int(stmt, 1, friendID);
@@ -1389,20 +1486,20 @@ const char* inviteCommand(const char* username, const char* groupname, int* clie
     pthread_mutex_unlock(&g_groupmembers_mutex);
 
     if (rc == SQLITE_DONE)
-        return INVITE_SUCCESS;
+        RET_DYN(INVITE_SUCCESS);
     else if (rc == SQLITE_CONSTRAINT)
-        return INVITE_ALREADY;
+        RET_DYN(INVITE_ALREADY);
     else
     {
         printf("[server] Eroare la sqlite3_step() la add\n");
-        return SQL_ERROR;
+        RET_DYN(SQL_ERROR);
     }
 }
 
-const char* kickCommand(const char* username, const char* groupname, int* client_id)
+char* kickCommand(const char* username, const char* groupname, int* client_id)
 {
     if (*client_id == LOGGED_OUT)
-        return NOT_LOGGED;
+        RET_DYN(NOT_LOGGED);
     
     char* endptr;
     int friendID = strtol(username, &endptr, 10);
@@ -1412,18 +1509,18 @@ const char* kickCommand(const char* username, const char* groupname, int* client
     {
         friendID = usernameToId(username);
         if (friendID == -1)
-            return ADD_FAILED;
+            RET_DYN(ADD_FAILED);
         else if (friendID == -2)
-            return SQL_ERROR;
+            RET_DYN(SQL_ERROR);
     }
     else
     {
         if (!userExists(friendID))
-            return ADD_FAILED;
+            RET_DYN(ADD_FAILED);
     }
 
     if (*client_id == friendID)
-        return KICK_SELF;
+        RET_DYN(KICK_SELF);
 
     int groupID = strtol(groupname, &endptr, 10);
 
@@ -1431,21 +1528,21 @@ const char* kickCommand(const char* username, const char* groupname, int* client
     {
         groupID = groupnameToId(groupname, client_id);
         if (groupID == -1)
-            return KICK_GROUPNOTEXIST;
+            RET_DYN(KICK_GROUPNOTEXIST);
         else if (groupID == -2)
-            return SQL_ERROR;
+            RET_DYN(SQL_ERROR);
     }
     else
     {
         if (!groupExists(groupID))
-            return KICK_GROUPNOTEXIST;
+            RET_DYN(KICK_GROUPNOTEXIST);
     }
 
     if (!isUserInGroup(*client_id, groupID))
-        return KICK_FAILED;
+        RET_DYN(KICK_FAILED);
 
     if (!isUserGroupOwner(*client_id, groupID))
-        return KICK_NOTOWNER;
+        RET_DYN(KICK_NOTOWNER);
     
     sqlite3_stmt* stmt;
     const char* sql_delete = "DELETE FROM group_members WHERE user_id = ? AND group_id = ?";
@@ -1453,7 +1550,7 @@ const char* kickCommand(const char* username, const char* groupname, int* client
     if (rc != SQLITE_OK)
     {
         printf("[server] Eroare sql_prepare()\n");
-        return SQL_ERROR;
+        RET_DYN(SQL_ERROR);
     }
 
     sqlite3_bind_int(stmt, 1, friendID);
@@ -1470,20 +1567,20 @@ const char* kickCommand(const char* username, const char* groupname, int* client
     pthread_mutex_unlock(&g_groupmembers_mutex);
 
     if (modifyCount > 0 && rc == SQLITE_DONE)
-        return KICK_SUCCESS;
+        RET_DYN(KICK_SUCCESS);
     else if (rc == SQLITE_DONE)
-        return KICK_ALREADY;
+        RET_DYN(KICK_ALREADY);
     else
     {
         printf("[server] Eroare la sqlite3_step() la add\n");
-        return SQL_ERROR;
+        RET_DYN(SQL_ERROR);
     }
 }
 
-const char* leaveCommand(const char* groupname, int* client_id)
+char* leaveCommand(const char* groupname, int* client_id)
 {
     if (*client_id == LOGGED_OUT)
-        return NOT_LOGGED;
+        RET_DYN(NOT_LOGGED);
     
     char* endptr;
     int rc;
@@ -1494,18 +1591,18 @@ const char* leaveCommand(const char* groupname, int* client_id)
     {
         groupID = groupnameToId(groupname, client_id);
         if (groupID == -1)
-            return KICK_GROUPNOTEXIST;
+            RET_DYN(KICK_GROUPNOTEXIST);
         else if (groupID == -2)
-            return SQL_ERROR;
+            RET_DYN(SQL_ERROR);
     }
     else
     {
         if (!groupExists(groupID))
-            return KICK_GROUPNOTEXIST;
+            RET_DYN(KICK_GROUPNOTEXIST);
     }
 
     if (!isUserInGroup(*client_id, groupID))
-        return KICK_FAILED;
+        RET_DYN(KICK_FAILED);
 
     isOwner = isUserGroupOwner(*client_id, groupID);
     
@@ -1515,7 +1612,7 @@ const char* leaveCommand(const char* groupname, int* client_id)
     if (rc != SQLITE_OK)
     {
         printf("[server] Eroare sql_prepare()\n");
-        return SQL_ERROR;
+        RET_DYN(SQL_ERROR);
     }
 
     sqlite3_bind_int(stmt, 1, *client_id);
@@ -1574,20 +1671,20 @@ const char* leaveCommand(const char* groupname, int* client_id)
     }
 
     if (rc == SQLITE_DONE)
-        return LEAVE_SUCCESS;
+        RET_DYN(LEAVE_SUCCESS);
     else if (rc == SQLITE_CONSTRAINT)
-        return LEAVE_FAILED;
+        RET_DYN(LEAVE_FAILED);
     else
     {
         printf("[server] Eroare la sqlite3_step() la add\n");
-        return SQL_ERROR;
+        RET_DYN(SQL_ERROR);
     }
 }
 
-const char* membersCommand(const char* groupname, int* client_id)
+char* membersCommand(const char* groupname, int* client_id)
 {
     if (*client_id == LOGGED_OUT)
-        return NOT_LOGGED;
+        RET_DYN(NOT_LOGGED);
     
     char* endptr;
     int rc;
@@ -1597,18 +1694,18 @@ const char* membersCommand(const char* groupname, int* client_id)
     {
         groupID = groupnameToId(groupname, client_id);
         if (groupID == -1)
-            return KICK_GROUPNOTEXIST;
+            RET_DYN(KICK_GROUPNOTEXIST);
         else if (groupID == -2)
-            return SQL_ERROR;
+            RET_DYN(SQL_ERROR);
     }
     else
     {
         if (!groupExists(groupID))
-            return KICK_GROUPNOTEXIST;
+            RET_DYN(KICK_GROUPNOTEXIST);
     }
 
     if (!isUserInGroup(*client_id, groupID))
-        return KICK_FAILED;
+        RET_DYN(KICK_FAILED);
     
     sqlite3_stmt* stmt;
     const char* sql_select = "SELECT u.id, u.username FROM users u "
@@ -1619,7 +1716,7 @@ const char* membersCommand(const char* groupname, int* client_id)
     if (rc != SQLITE_OK)
     {
         printf("[server] Eroare sql_prepare() la friends\n");
-        return SQL_ERROR;
+        RET_DYN(SQL_ERROR);
     }
     sqlite3_bind_int(stmt, 1, groupID);
 
@@ -1669,14 +1766,14 @@ const char* membersCommand(const char* groupname, int* client_id)
     {
         free(members);
         printf("[server] Eroare la sqlite3_step() la friends\n");
-        return SQL_ERROR;
+        RET_DYN(SQL_ERROR);
     }
 }
 
-const char* groupsCommand(int* client_id)
+char* groupsCommand(int* client_id)
 {
     if (*client_id == LOGGED_OUT)
-        return NOT_LOGGED;
+        RET_DYN(NOT_LOGGED);
     
     int rc;
     sqlite3_stmt* stmt;
@@ -1688,7 +1785,7 @@ const char* groupsCommand(int* client_id)
     if (rc != SQLITE_OK)
     {
         printf("[server] Eroare sql_prepare() la friends\n");
-        return SQL_ERROR;
+        RET_DYN(SQL_ERROR);
     }
     sqlite3_bind_int(stmt, 1, *client_id);
 
@@ -1728,8 +1825,12 @@ const char* groupsCommand(int* client_id)
     if (groupsSize == sizeof(GROUPS))
     {
         groups = realloc(groups, sizeof(GROUPS_FAILED));
+        groupsSize = sizeof(GROUPS_FAILED);
         strcpy(groups, GROUPS_FAILED);
     }
+
+    groups = realloc(groups, groupsSize + sizeof(GROUPS_SUFFIX) - 1);
+    strcat(groups, GROUPS_SUFFIX);
 
     if (rc == SQLITE_DONE)
         return groups;
@@ -1737,14 +1838,14 @@ const char* groupsCommand(int* client_id)
     {
         free(groups);
         printf("[server] Eroare la sqlite3_step() la friends\n");
-        return SQL_ERROR;
+        RET_DYN(SQL_ERROR);
     }
 }
 
-const char* groupchatCommand(const char* groupname, const char* message, int* client_id)
+char* groupchatCommand(const char* groupname, const char* message, int* client_id)
 {
     if (*client_id == LOGGED_OUT)
-        return NOT_LOGGED;
+        RET_DYN(NOT_LOGGED);
     
     char* endptr;
     int rc;
@@ -1754,18 +1855,18 @@ const char* groupchatCommand(const char* groupname, const char* message, int* cl
     {
         groupID = groupnameToId(groupname, client_id);
         if (groupID == -1)
-            return KICK_GROUPNOTEXIST;
+            RET_DYN(KICK_GROUPNOTEXIST);
         else if (groupID == -2)
-            return SQL_ERROR;
+            RET_DYN(SQL_ERROR);
     }
     else
     {
         if (!groupExists(groupID))
-            return KICK_GROUPNOTEXIST;
+            RET_DYN(KICK_GROUPNOTEXIST);
     }
 
     if (!isUserInGroup(*client_id, groupID))
-        return KICK_FAILED;
+        RET_DYN(KICK_FAILED);
     
     sqlite3_stmt* stmt;
     printf("[server] before prepare\n");
@@ -1774,7 +1875,7 @@ const char* groupchatCommand(const char* groupname, const char* message, int* cl
     if (rc != SQLITE_OK)
     {
         printf("[server] Eroare sql_prepare()\n");
-        return SQL_ERROR;
+        RET_DYN(SQL_ERROR);
     }
     printf("[server] after prepare\n");
 
@@ -1790,18 +1891,18 @@ const char* groupchatCommand(const char* groupname, const char* message, int* cl
     pthread_mutex_unlock(&g_groupmessages_mutex);
 
     if (rc == SQLITE_DONE)
-        return CHAT_SUCCESS;
+        RET_DYN(GROUPCHAT_SUCCESS);
     else
     {
         printf("[server] Eroare sqlite3_step() la post\n");
-        return SQL_ERROR;
+        RET_DYN(SQL_ERROR);
     }
 }
 
-const char* showgroupchatCommand(const char* groupname, int* client_id)
+char* showgroupchatCommand(const char* groupname, int* client_id)
 {
     if (*client_id == LOGGED_OUT)
-        return NOT_LOGGED;
+        RET_DYN(NOT_LOGGED);
     
     char* endptr;
     int rc;
@@ -1811,18 +1912,18 @@ const char* showgroupchatCommand(const char* groupname, int* client_id)
     {
         groupID = groupnameToId(groupname, client_id);
         if (groupID == -1)
-            return KICK_GROUPNOTEXIST;
+            RET_DYN(KICK_GROUPNOTEXIST);
         else if (groupID == -2)
-            return SQL_ERROR;
+            RET_DYN(SQL_ERROR);
     }
     else
     {
         if (!groupExists(groupID))
-            return KICK_GROUPNOTEXIST;
+            RET_DYN(KICK_GROUPNOTEXIST);
     }
 
     if (!isUserInGroup(*client_id, groupID))
-        return KICK_FAILED;
+        RET_DYN(KICK_FAILED);
     
     sqlite3_stmt* stmt;
     const char* sql_select = "SELECT u.id, u.username, gm.message, gm.created_at FROM group_messages gm "
@@ -1834,7 +1935,7 @@ const char* showgroupchatCommand(const char* groupname, int* client_id)
     if (rc != SQLITE_OK)
     {
         printf("[server] Eroare sql_prepare() la friends\n");
-        return SQL_ERROR;
+        RET_DYN(SQL_ERROR);
     }
     sqlite3_bind_int(stmt, 1, groupID);
 
@@ -1874,8 +1975,12 @@ const char* showgroupchatCommand(const char* groupname, int* client_id)
     if (chatsSize == initSize)
     {
         chats = realloc(chats, sizeof(CHATS_FAILED));
+        chatsSize = sizeof(CHATS_FAILED);
         strcpy(chats, CHATS_FAILED);
     }
+
+    chats = realloc(chats, chatsSize + sizeof(SHOWGROUPCHAT_SUFFIX) - 1);
+    strcat(chats, SHOWGROUPCHAT_SUFFIX);
 
     if (rc == SQLITE_DONE)
         return chats;
@@ -1883,14 +1988,14 @@ const char* showgroupchatCommand(const char* groupname, int* client_id)
     {
         free(chats);
         printf("[server] Eroare la sqlite3_step() la friends\n");
-        return SQL_ERROR;
+        RET_DYN(SQL_ERROR);
     }
 }
 
-const char* privacyCommand(const char* type, int* client_id)
+char* privacyCommand(const char* type, int* client_id)
 {
     if (*client_id == LOGGED_OUT)
-        return NOT_LOGGED;
+        RET_DYN(NOT_LOGGED);
 
     int int_type = 0;
     if (strcmp(type, PRIVACY_PUBLIC) == 0)
@@ -1898,7 +2003,7 @@ const char* privacyCommand(const char* type, int* client_id)
     else if (strcmp(type, PRIVACY_PRIVATE) == 0)
         int_type = private;
     else
-        return PRIVACY_INVALID;
+        RET_DYN(PRIVACY_INVALID);
 
     int rc;
     sqlite3_stmt* stmt;
@@ -1907,7 +2012,7 @@ const char* privacyCommand(const char* type, int* client_id)
     if (rc != SQLITE_OK)
     {
         printf("[server] Eroare sql_prepare() la friendtype\n");
-        return SQL_ERROR;
+        RET_DYN(SQL_ERROR);
     }
 
     sqlite3_bind_int(stmt, 1, int_type);
@@ -1921,74 +2026,60 @@ const char* privacyCommand(const char* type, int* client_id)
     pthread_mutex_unlock(&g_friends_mutex);
 
     if (rc == SQLITE_DONE)
-        return PRIVACY_SUCCESS;
+        RET_DYN(PRIVACY_SUCCESS);
     else
     {
         printf("[server] Eroare la sqlite3_step() la friendtype\n");
-        return SQL_ERROR;
+        RET_DYN(SQL_ERROR);
     }
 }
 
-const char* userCommand(int* client_id)
+char* userCommand(int* client_id)
 {
     if (*client_id == LOGGED_OUT)
-        return NOT_LOGGED;
+        RET_DYN(NOT_LOGGED);
     
     int rc;
     sqlite3_stmt* stmt;
-    const char* sql_select = "SELECT username, " // usernameul
-                                    "COUNT(" // numarul de prieteni
-                                        "SELECT 1 FROM users u "
-                                        "JOIN friends f ON (f.user_id = u.id OR f.friend_id = u.id) "
-                                        "WHERE u.id = ? AND f.status = 1 "
-                                        "),"
-                                    "COUNT(" // numarul de postari
-                                        "SELECT 1 FROM users u "
-                                        "JOIN posts p ON p.user_id = u.id "
-                                        "WHERE u.id = ?"
-                                        "),"
-                                    "COUNT(" // numarul de grupuri in care este
-                                        "SELECT 1 FROM users u "
-                                        "JOIN group_members gm ON gm.user_id = u.id "
-                                        "JOIN groups g ON g.id = gm.group_id "
-                                        "WHERE u.id = ?"
-                                        "),"
-                                    "COUNT(" // numarul de dmuri trimise
-                                        "SELECT 1 FROM users u "
-                                        "JOIN messages m ON m.sender_id = u.id "
-                                        "WHERE u.id = ?"
-                                        "),"
-                                    "COUNT(" // numarul de dmuri primite
-                                        "SELECT 1 FROM users u "
-                                        "JOIN messages m ON m.receiver_id = u.id "
-                                        "WHERE u.id = ?"
-                                        "),"
-                                    "COUNT(" // numarul de mesaje trimise in grupuri
-                                        "SELECT 1 FROM users u "
-                                        "JOIN group_messages gm ON gm.sender_id = u.id "
-                                        "WHERE u.id = ?"
-                                        "),"
-                                    "COUNT(" // numarul de mesaje primite in grupuri
-                                        "SELECT 1 FROM users u "
-                                        "JOIN group_members gm ON gm.user_id = u.id "
-                                        "JOIN groups g ON g.id = gm.group_id "
-                                        "JOIN group_messages m ON m.group_id = g.id "
-                                        "WHERE u.id = ? AND m.sender_id != u.id"
-                                        ") "
-                                    "FROM users WHERE id = ?";
+    const char* sql_select = "SELECT u.username, " // usernameul
+                                    "(" // numarul de prieteni
+                                        "SELECT COUNT(*) FROM friends f "
+                                        "WHERE (u.id = f.user_id OR u.id = f.friend_id) AND f.status = 1 "
+                                    "),"
+                                    "(" // numarul de postari
+                                        "SELECT COUNT(*) FROM posts p "
+                                        "WHERE p.user_id = u.id"
+                                    "),"
+                                    "(" // numarul de grupuri in care este
+                                        "SELECT COUNT(*) FROM group_members gm "
+                                        "WHERE u.id = gm.user_id"
+                                    "),"
+                                    "(" // numarul de dmuri trimise
+                                        "SELECT COUNT(*) FROM messages m "
+                                        "WHERE u.id = m.sender_id"
+                                    "),"
+                                    "(" // numarul de dmuri primite
+                                        "SELECT COUNT(*) FROM messages m "
+                                        "WHERE u.id = m.receiver_id"
+                                    "),"
+                                    "(" // numarul de mesaje trimise in grupuri
+                                        "SELECT COUNT(*) FROM group_messages gm "
+                                        "WHERE u.id = gm.sender_id"
+                                    "),"
+                                    "(" // numarul de mesaje primite in grupuri
+                                        "SELECT COUNT(*) FROM group_messages gm "
+                                        "JOIN group_members m ON m.group_id = gm.group_id "
+                                        "WHERE u.id = m.user_id AND gm.sender_id != u.id"
+                                    "),"
+                                    "u.id, u.role, u.privacy, u.created_at "
+                                    "FROM users u WHERE u.id = ?";
     rc = sqlite3_prepare_v2(db, sql_select, -1, &stmt, 0);
     if (rc != SQLITE_OK)
     {
         printf("[server] Eroare sql_prepare() la user\n");
-        return SQL_ERROR;
+        RET_DYN(SQL_ERROR);
     }
     sqlite3_bind_int(stmt, 1, *client_id);
-    sqlite3_bind_int(stmt, 2, *client_id);
-    sqlite3_bind_int(stmt, 3, *client_id);
-    sqlite3_bind_int(stmt, 4, *client_id);
-    sqlite3_bind_int(stmt, 5, *client_id);
-    sqlite3_bind_int(stmt, 6, *client_id);
-    sqlite3_bind_int(stmt, 7, *client_id);
 
     char* output;
     
@@ -2010,21 +2101,32 @@ const char* userCommand(int* client_id)
         int receiveddmCount = sqlite3_column_int(stmt, 5);
         int sentgroupdmCount = sqlite3_column_int(stmt, 6);
         int receivedgroupdmCount = sqlite3_column_int(stmt, 7);
+        int id = sqlite3_column_int(stmt, 8);
+        int int_role = sqlite3_column_int(stmt, 9);
+        const char* role = int_role == 0 ? "REGULAR" : "ADMIN";
+        int int_privacy = sqlite3_column_int(stmt, 10);
+        const char* privacy = int_privacy == 0 ? "PUBLIC" : "PRIVATE";
+        const unsigned char* created_at = sqlite3_column_text(stmt, 11);
 
         char final[BUFFER_SIZE];
-        snprintf(final, sizeof(final), "\nUsername:\t%s\n"
-                                        "Number of friends:\t%d\n"
-                                        "Number of posts:\t%d\n"
-                                        "Number of groups joined:\t%d\n"
-                                        "Number of DMs sent:\t%d\n"
-                                        "Number of DMs received:\t%d\n"
-                                        "Number of Group DMs sent:\t%d\n"
-                                        "Number of Group DMs received:\t%d",
-                                        username, friendCount, postCount,
-                                        groupCount, sentdmCount, receiveddmCount,
-                                        sentgroupdmCount, receivedgroupdmCount);
+        snprintf(final, sizeof(final), "\nID: %d\n"
+                                        "Username: %s\n"
+                                        "Role: %s\n"
+                                        "Privacy: %s\n"
+                                        "Number of friends: %d\n"
+                                        "Number of posts: %d\n"
+                                        "Number of groups joined: %d\n"
+                                        "Number of DMs sent: %d\n"
+                                        "Number of DMs received: %d\n"
+                                        "Number of Group DMs sent: %d\n"
+                                        "Number of Group DMs received: %d\n"
+                                        "Account created at: %s",
+                                        id, username, role, privacy, friendCount,
+                                        postCount, groupCount, sentdmCount,
+                                        receiveddmCount, sentgroupdmCount, 
+                                        receivedgroupdmCount, created_at);
 
-        output = malloc(strlen(final)) + 1;
+        output = malloc(strlen(final) + 1);
         strcpy(output, final);
     }
     sqlite3_finalize(stmt);
@@ -2037,28 +2139,136 @@ const char* userCommand(int* client_id)
     pthread_mutex_unlock(&g_groupmembers_mutex);
     pthread_mutex_unlock(&g_groupmessages_mutex);
 
-    if (rc == SQLITE_DONE)
+    if (rc == SQLITE_ROW)
         return output;
     else
     {
-        free(output);
         printf("[server] Eroare la sqlite3_step() la friends\n");
-        return SQL_ERROR;
+        RET_DYN(SQL_ERROR);
     }
 }
 
-const char* banCommand(int* client_id)
+char* banCommand(const char* username, int* client_id)
 {
-    pthread_mutex_lock(&g_users_mutex);
+    if (*client_id == LOGGED_OUT)
+        RET_DYN(NOT_LOGGED);
+    
+    char* endptr;
+    int banID = strtol(username, &endptr, 10);
+    int rc;
 
-    if (*client_id != LOGGED_OUT)
+    if (*endptr != '\0') // userul a dat un username nu un id si facem rost de id dupa username
     {
-        pthread_mutex_unlock(&g_users_mutex);
-        return generateOutput("BAN_COMMAND");
+        banID = usernameToId(username);
+        if (banID == -1)
+            RET_DYN(ADD_FAILED);
+        else if (banID == -2)
+            RET_DYN(SQL_ERROR);
     }
     else
     {
-        pthread_mutex_unlock(&g_users_mutex);
-        return NOT_LOGGED;
+        if (!userExists(banID))
+            RET_DYN(ADD_FAILED);
+    }
+
+    int isAdmin = isUserAdmin(*client_id);
+    if (isAdmin == 0)
+        RET_DYN(BAN_NOTADMIN);
+    else if (isAdmin == -1)
+        RET_DYN(SQL_ERROR);
+    
+    sqlite3_stmt* banstmt;
+    const char* sql_remove = "DELETE FROM users WHERE id = ?";
+    rc = sqlite3_prepare_v2(db, sql_remove, -1, &banstmt, 0);
+    if (rc != SQLITE_OK)
+    {
+        printf("[server] Eroare sql_prepare()\n");
+        RET_DYN(SQL_ERROR);
+    }
+
+    sqlite3_bind_int(banstmt, 1, banID);
+
+    int modifyCount = 0;
+
+    //nu merge sters userul daca e owner in vreun grup
+    //asa ca le stergem daca mai e doar el sau daca mai
+    //sunt membrii alegem unul nou ca si owner
+    randomOwnerForOwnedGroups(banID);
+
+    pthread_mutex_lock(&g_users_mutex);
+
+    rc = sqlite3_step(banstmt);
+    modifyCount = sqlite3_changes(db);
+    sqlite3_finalize(banstmt);
+
+    pthread_mutex_unlock(&g_users_mutex);
+
+    if (modifyCount > 0 && rc == SQLITE_DONE)
+        RET_DYN(BAN_SUCCESS);
+    else if (rc == SQLITE_DONE)
+        RET_DYN(ADD_FAILED);
+    else
+    {
+        printf("[server] Eroare la sqlite3_step() la remove\n");
+        RET_DYN(SQL_ERROR);
+    }
+}
+
+char* searchCommand(const char* username, int* client_id)
+{   
+    char* endptr;
+    int rc;
+    
+    sqlite3_stmt* stmt;
+    const char* sql_select = "SELECT id, username, role FROM users "
+                                "WHERE username LIKE '%' || ? || '%' AND privacy = 0";
+    rc = sqlite3_prepare_v2(db, sql_select, -1, &stmt, 0);
+    if (rc != SQLITE_OK)
+    {
+        printf("[server] Eroare sql_prepare() la friends\n");
+        RET_DYN(SQL_ERROR);
+    }
+    sqlite3_bind_text(stmt, 1, username, -1, SQLITE_STATIC);
+    
+    int initSize;
+    int membersSize = initSize = sizeof(SEARCH) + strlen(username) + 1;
+    char* members = malloc(membersSize);
+    strcat(strcat(strcpy(members, SEARCH), username), ":");
+
+    pthread_mutex_lock(&g_users_mutex);
+
+    while ((rc = sqlite3_step(stmt)) == SQLITE_ROW)
+    {
+        int id = sqlite3_column_int(stmt, 0);
+        const unsigned char* username = sqlite3_column_text(stmt, 1);
+        int role = sqlite3_column_int(stmt, 2);
+
+        const char* type = role == 0 ? REGULAR_USER : ADMIN_USER;
+
+        char member[BUFFER_SIZE];
+        snprintf(member, sizeof(member), "\n[%d] %s | %s", id, username, type);
+
+        membersSize += strlen(member);
+        members = realloc(members, membersSize);
+        strcat(members, member);
+    }
+    sqlite3_finalize(stmt);
+    
+    pthread_mutex_unlock(&g_users_mutex);
+
+    if (membersSize == initSize)
+    {
+        members = realloc(members, sizeof(SEARCH_FAILED));
+        membersSize = sizeof(SEARCH_FAILED);
+        strcpy(members, SEARCH_FAILED);
+    }
+
+    if (rc == SQLITE_DONE)
+        return members;
+    else
+    {
+        free(members);
+        printf("[server] Eroare la sqlite3_step() la friends\n");
+        RET_DYN(SQL_ERROR);
     }
 }

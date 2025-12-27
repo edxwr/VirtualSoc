@@ -183,12 +183,12 @@ char** parseCommand(char* command, int* tokenCount)
     return tokens;
 }
 
-const char* handleCommand(char** tokens, int* tokenCount, int* client_id)
+char* handleCommand(char** tokens, int* tokenCount, int* client_id)
 {
     for (int i = 0; i < *tokenCount; ++i)
         printf("[server] Token %d: %s\n", i, tokens[i]);
     if (*tokenCount == 0)
-        return EMPTY_INPUT;
+        RET_DYN(EMPTY_INPUT);
     char* bufferOut;
     const char* command = tokens[0];
     (*tokenCount)--;
@@ -203,11 +203,11 @@ const char* handleCommand(char** tokens, int* tokenCount, int* client_id)
             return registerCommand(username, password, type);
         }
         else if (*tokenCount == 0)
-            return NO_ARGUMENTS;
+            RET_DYN(NO_ARGUMENTS);
         else if (*tokenCount < REGISTER_ARGC)
-            return LESS_ARGUMENTS;
+            RET_DYN(LESS_ARGUMENTS);
         else if (*tokenCount > REGISTER_ARGC)
-            return MORE_ARGUMENTS;
+            RET_DYN(MORE_ARGUMENTS);
     }
     else if (strcmp(command, LOGIN_COMMAND) == 0)
     {
@@ -219,22 +219,22 @@ const char* handleCommand(char** tokens, int* tokenCount, int* client_id)
             return loginCommand(username, password, client_id);
         }
         else if (*tokenCount == 0)
-            return NO_ARGUMENTS;
+            RET_DYN(NO_ARGUMENTS);
         else if (*tokenCount < LOGIN_ARGC)
-            return LESS_ARGUMENTS;
+            RET_DYN(LESS_ARGUMENTS);
         else if (*tokenCount > LOGIN_ARGC)
-            return MORE_ARGUMENTS;
+            RET_DYN(MORE_ARGUMENTS);
     }
     else if (strcmp(command, LOGOUT_COMMAND) == 0)
     {
         if (*tokenCount == LOGOUT_ARGC)
             return logoutCommand(client_id);
         else if (*tokenCount == 0)
-            return NO_ARGUMENTS;
+            RET_DYN(NO_ARGUMENTS);
         else if (*tokenCount < LOGOUT_ARGC)
-            return LESS_ARGUMENTS;
+            RET_DYN(LESS_ARGUMENTS);
         else if (*tokenCount > LOGOUT_ARGC)
-            return MORE_ARGUMENTS;
+            RET_DYN(MORE_ARGUMENTS);
     }
     else if (strcmp(command, ADD_COMMAND) == 0)
     {
@@ -244,11 +244,11 @@ const char* handleCommand(char** tokens, int* tokenCount, int* client_id)
             return addCommand(username, client_id);
         }
         else if (*tokenCount == 0)
-            return NO_ARGUMENTS;
+            RET_DYN(NO_ARGUMENTS);
         else if (*tokenCount < ADD_ARGC)
-            return LESS_ARGUMENTS;
+            RET_DYN(LESS_ARGUMENTS);
         else if (*tokenCount > ADD_ARGC)
-            return MORE_ARGUMENTS;
+            RET_DYN(MORE_ARGUMENTS);
     }
     else if (strcmp(command, ACCEPT_COMMAND) == 0)
     {
@@ -258,9 +258,9 @@ const char* handleCommand(char** tokens, int* tokenCount, int* client_id)
             return acceptCommand(username, client_id);
         }
         else if (*tokenCount == 0)
-            return NO_ARGUMENTS;
+            RET_DYN(NO_ARGUMENTS);
         else if (*tokenCount < REQUEST_ARGC)
-            return LESS_ARGUMENTS;
+            RET_DYN(LESS_ARGUMENTS);
     }
     else if (strcmp(command, DECLINE_COMMAND) == 0)
     {
@@ -270,16 +270,16 @@ const char* handleCommand(char** tokens, int* tokenCount, int* client_id)
             return declineCommand(username, client_id);
         }
         else if (*tokenCount == 0)
-            return NO_ARGUMENTS;
+            RET_DYN(NO_ARGUMENTS);
         else if (*tokenCount < REQUEST_ARGC)
-            return LESS_ARGUMENTS;
+            RET_DYN(LESS_ARGUMENTS);
     }
     else if (strcmp(command, REQUESTS_COMMAND) == 0)
     {
         if (*tokenCount == REQUESTS_ARGC)
             return requestsCommand(client_id);
         else if (*tokenCount > REQUEST_ARGC)
-            return MORE_ARGUMENTS;
+            RET_DYN(MORE_ARGUMENTS);
     }
     else if (strcmp(command, REMOVE_COMMAND) == 0)
     {
@@ -289,22 +289,22 @@ const char* handleCommand(char** tokens, int* tokenCount, int* client_id)
             return removeCommand(username, client_id);
         }
         else if (*tokenCount == 0)
-            return NO_ARGUMENTS;
+            RET_DYN(NO_ARGUMENTS);
         else if (*tokenCount < REMOVE_ARGC)
-            return LESS_ARGUMENTS;
+            RET_DYN(LESS_ARGUMENTS);
         else if (*tokenCount > REMOVE_ARGC)
-            return MORE_ARGUMENTS;
+            RET_DYN(MORE_ARGUMENTS);
     }
     else if (strcmp(command, FRIENDS_COMMAND) == 0)
     {
         if (*tokenCount == FRIENDS_ARGC)
             return friendsCommand(client_id);
         else if (*tokenCount == 0)
-            return NO_ARGUMENTS;
+            RET_DYN(NO_ARGUMENTS);
         else if (*tokenCount < FRIENDS_ARGC)
-            return LESS_ARGUMENTS;
+            RET_DYN(LESS_ARGUMENTS);
         else if (*tokenCount > FRIENDS_ARGC)
-            return MORE_ARGUMENTS;
+            RET_DYN(MORE_ARGUMENTS);
     }
     else if (strcmp(command, FRIENDTYPE_COMMAND) == 0)
     {
@@ -315,11 +315,11 @@ const char* handleCommand(char** tokens, int* tokenCount, int* client_id)
             return friendtypeCommand(username, type, client_id);
         }
         else if (*tokenCount == 0)
-            return NO_ARGUMENTS;
+            RET_DYN(NO_ARGUMENTS);
         else if (*tokenCount < FRIENDTYPE_ARGC)
-            return LESS_ARGUMENTS;
+            RET_DYN(LESS_ARGUMENTS);
         else if (*tokenCount > FRIENDTYPE_ARGC)
-            return MORE_ARGUMENTS;
+            RET_DYN(MORE_ARGUMENTS);
     }
     else if (strcmp(command, POST_COMMAND) == 0)
     {
@@ -330,16 +330,16 @@ const char* handleCommand(char** tokens, int* tokenCount, int* client_id)
             return postCommand(privacy, message, client_id);
         }
         else if (*tokenCount == 0)
-            return NO_ARGUMENTS;
+            RET_DYN(NO_ARGUMENTS);
         else if (*tokenCount < POST_ARGC)
-            return LESS_ARGUMENTS;
+            RET_DYN(LESS_ARGUMENTS);
     }
     else if (strcmp(command, POSTS_COMMAND) == 0)
     {
         if (*tokenCount == POSTS_ARGC)
             return postsCommand(client_id);
         else if (*tokenCount > POSTS_ARGC)
-            return MORE_ARGUMENTS;
+            RET_DYN(MORE_ARGUMENTS);
     }
     else if (strcmp(command, CHAT_COMMAND) == 0)
     {
@@ -350,16 +350,16 @@ const char* handleCommand(char** tokens, int* tokenCount, int* client_id)
             return chatCommand(username, message, client_id);
         }
         else if (*tokenCount == 0)
-            return NO_ARGUMENTS;
+            RET_DYN(NO_ARGUMENTS);
         else if (*tokenCount < CHAT_ARGC)
-            return LESS_ARGUMENTS;
+            RET_DYN(LESS_ARGUMENTS);
     }
     else if (strcmp(command, CHATS_COMMAND) == 0)
     {
         if (*tokenCount == CHATS_ARGC)
             return chatsCommand(client_id);
         else if (*tokenCount > CHATS_ARGC)
-            return MORE_ARGUMENTS;
+            RET_DYN(MORE_ARGUMENTS);
     }
     else if (strcmp(command, SHOWCHAT_COMMAND) == 0)
     {
@@ -369,9 +369,9 @@ const char* handleCommand(char** tokens, int* tokenCount, int* client_id)
             return showchatCommand(username, client_id);
         }
         else if (*tokenCount == 0)
-            return NO_ARGUMENTS;
+            RET_DYN(NO_ARGUMENTS);
         else if (*tokenCount > SHOWCHAT_ARGC)
-            return MORE_ARGUMENTS;
+            RET_DYN(MORE_ARGUMENTS);
     }
     else if (strcmp(command, CREATEGROUP_COMMAND) == 0)
     {
@@ -381,9 +381,9 @@ const char* handleCommand(char** tokens, int* tokenCount, int* client_id)
             return creategroupCommand(groupname, client_id);
         }
         else if (*tokenCount == 0)
-            return NO_ARGUMENTS;
+            RET_DYN(NO_ARGUMENTS);
         else if (*tokenCount > CREATEGROUP_ARGC)
-            return MORE_ARGUMENTS;
+            RET_DYN(MORE_ARGUMENTS);
     }
     else if (strcmp(command, INVITE_COMMAND) == 0)
     {
@@ -394,11 +394,11 @@ const char* handleCommand(char** tokens, int* tokenCount, int* client_id)
             return inviteCommand(username, groupname, client_id);
         }
         else if (*tokenCount == 0)
-            return NO_ARGUMENTS;
+            RET_DYN(NO_ARGUMENTS);
         else if (*tokenCount < INVITE_ARGC)
-            return LESS_ARGUMENTS;
+            RET_DYN(LESS_ARGUMENTS);
         else if (*tokenCount > INVITE_ARGC)
-            return MORE_ARGUMENTS;
+            RET_DYN(MORE_ARGUMENTS);
     }
     else if (strcmp(command, KICK_COMMAND) == 0)
     {
@@ -409,11 +409,11 @@ const char* handleCommand(char** tokens, int* tokenCount, int* client_id)
             return kickCommand(username, groupname, client_id);
         }
         else if (*tokenCount == 0)
-            return NO_ARGUMENTS;
+            RET_DYN(NO_ARGUMENTS);
         else if (*tokenCount < KICK_ARGC)
-            return LESS_ARGUMENTS;
+            RET_DYN(LESS_ARGUMENTS);
         else if (*tokenCount > KICK_ARGC)
-            return MORE_ARGUMENTS;
+            RET_DYN(MORE_ARGUMENTS);
     }
     else if (strcmp(command, LEAVE_COMMAND) == 0)
     {
@@ -423,9 +423,9 @@ const char* handleCommand(char** tokens, int* tokenCount, int* client_id)
             return leaveCommand(groupname, client_id);
         }
         else if (*tokenCount == 0)
-            return NO_ARGUMENTS;
+            RET_DYN(NO_ARGUMENTS);
         else if (*tokenCount > LEAVE_ARGC)
-            return MORE_ARGUMENTS;
+            RET_DYN(MORE_ARGUMENTS);
     }
     else if (strcmp(command, MEMBERS_COMMAND) == 0)
     {
@@ -435,16 +435,16 @@ const char* handleCommand(char** tokens, int* tokenCount, int* client_id)
             return membersCommand(groupname, client_id);
         }
         else if (*tokenCount == 0)
-            return NO_ARGUMENTS;
+            RET_DYN(NO_ARGUMENTS);
         else if (*tokenCount > MEMBERS_ARGC)
-            return MORE_ARGUMENTS;
+            RET_DYN(MORE_ARGUMENTS);
     }
     else if (strcmp(command, GROUPS_COMMAND) == 0)
     {
         if (*tokenCount == GROUPS_ARGC)
             return groupsCommand(client_id);
         else if (*tokenCount > GROUPS_ARGC)
-            return MORE_ARGUMENTS;
+            RET_DYN(MORE_ARGUMENTS);
     }
     else if (strcmp(command, GROUPCHAT_COMMAND) == 0)
     {
@@ -455,9 +455,9 @@ const char* handleCommand(char** tokens, int* tokenCount, int* client_id)
             return groupchatCommand(groupname, message, client_id);
         }
         else if (*tokenCount == 0)
-            return NO_ARGUMENTS;
+            RET_DYN(NO_ARGUMENTS);
         else if (*tokenCount < GROUPCHAT_ARGC)
-            return LESS_ARGUMENTS;
+            RET_DYN(LESS_ARGUMENTS);
     }
     else if (strcmp(command, SHOWGROUPCHAT_COMMAND) == 0)
     {
@@ -467,9 +467,9 @@ const char* handleCommand(char** tokens, int* tokenCount, int* client_id)
             return showgroupchatCommand(groupname, client_id);
         }
         else if (*tokenCount == 0)
-            return NO_ARGUMENTS;
+            RET_DYN(NO_ARGUMENTS);
         else if (*tokenCount > SHOWGROUPCHAT_ARGC)
-            return MORE_ARGUMENTS;
+            RET_DYN(MORE_ARGUMENTS);
     }
     else if (strcmp(command, PRIVACY_COMMAND) == 0)
     {
@@ -479,41 +479,62 @@ const char* handleCommand(char** tokens, int* tokenCount, int* client_id)
             return privacyCommand(type, client_id);
         }
         else if (*tokenCount == 0)
-            return NO_ARGUMENTS;
+            RET_DYN(NO_ARGUMENTS);
         else if (*tokenCount > PRIVACY_ARGC)
-            return MORE_ARGUMENTS;
+            RET_DYN(MORE_ARGUMENTS);
     }
     else if (strcmp(command, USER_COMMAND) == 0)
     {
         if (*tokenCount == USER_ARGC)
             return userCommand(client_id);
         else if (*tokenCount > USER_ARGC)
-            return MORE_ARGUMENTS;
+            RET_DYN(MORE_ARGUMENTS);
     }
     else if (strcmp(command, BAN_COMMAND) == 0)
     {
-        if (*tokenCount >= BAN_ARGC)
-            return banCommand(client_id);
+        if (*tokenCount == BAN_ARGC)
+        {
+            const char* username = tokens[1];
+            return banCommand(username, client_id);
+        }
         else if (*tokenCount == 0)
-            return NO_ARGUMENTS;
-        else if (*tokenCount < BAN_ARGC)
-            return LESS_ARGUMENTS;
+            RET_DYN(NO_ARGUMENTS);
+        else if (*tokenCount > BAN_ARGC)
+            RET_DYN(MORE_ARGUMENTS);
+    }
+    else if (strcmp(command, SEARCH_COMMAND) == 0)
+    {
+        if (*tokenCount == SEARCH_ARGC)
+        {
+            const char* username = tokens[1];
+            return searchCommand(username, client_id);
+        }
+        else if (*tokenCount == 0)
+            RET_DYN(NO_ARGUMENTS);
+        else if (*tokenCount > SEARCH_ARGC)
+            RET_DYN(MORE_ARGUMENTS);
     }
     else if (strcmp(command, HELP_COMMAND) == 0)
     {
         if (*tokenCount > HELP_ARGC)
-            return MORE_ARGUMENTS;
+            RET_DYN(MORE_ARGUMENTS);
         else
-            return HELP;
+            RET_DYN(HELP);
     }
-    return UNKNOWN_COMMAND;
+    RET_DYN(UNKNOWN_COMMAND);
 }
 
 void* handleClient(void* arg)
 {
     int clientfd = *(int*) arg;
+
     char* bufferIn = NULL;
+
+    int tokenCount;
     char** tokens = NULL;
+
+    char* bufferOut = NULL;
+
     int client_id = LOGGED_OUT;
     free(arg);
 
@@ -536,12 +557,23 @@ void* handleClient(void* arg)
 
         /* ------------------------------------------------------------------ */
 
-        int tokenCount = 0;
+        tokenCount = 0;
         tokens = parseCommand(bufferIn, &tokenCount);
         //printf("[d_server] after parseCommand()\n");
+        if (bufferIn != NULL)
+        {
+            free(bufferIn);
+            bufferIn = NULL;
+        }
 
-        const char* bufferOut = handleCommand(tokens, &tokenCount, &client_id);
+        bufferOut = handleCommand(tokens, &tokenCount, &client_id);
         //printf("[d_server] after handleCommand()\n");
+        if (tokens != NULL)
+        {
+            freeTokens(tokens, tokenCount);
+            tokens = NULL;
+        }
+
         bufferSize = strlen(bufferOut) + 1;
         printf("[d_server] bufferOut / bufferSize : %s / %d\n", bufferOut, bufferSize);
 
@@ -557,13 +589,30 @@ void* handleClient(void* arg)
             handleThreadError("write(buffer)");
             break;
         }
+        if (bufferOut != NULL)
+        {
+            free(bufferOut);
+            bufferOut = NULL;
+        }
     }
 
     if (bufferIn != NULL)
+    {
         free(bufferIn);
+        bufferIn = NULL;
+    }
     
     if (tokens != NULL)
-        free(tokens);
+    {
+        freeTokens(tokens, tokenCount);
+        tokens = NULL;
+    }
+
+    if (bufferOut != NULL)
+    {
+        free(bufferOut);
+        bufferOut = NULL;
+    }
 
     close(clientfd);
 }
@@ -618,8 +667,3 @@ int main(void)
         pthread_attr_destroy(&attr);
     }
 }
-
-/*
-INLOCUIESTE userList cu SQLITE
-RESTUL COMENZILOR
-*/
