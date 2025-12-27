@@ -1320,7 +1320,7 @@ char* showchatCommand(const char* username, int* client_id)
         if (sender_id == *client_id)
         {
             id = *client_id;
-            username = "You: ";
+            username = "You";
         }
         else
         {
@@ -1939,12 +1939,14 @@ char* showgroupchatCommand(const char* groupname, int* client_id)
     }
     sqlite3_bind_int(stmt, 1, groupID);
 
+    char groupID_NAME[groupnameLength + 4];
     unsigned char* realGroupname = idToGroupname(groupID);
+    snprintf(groupID_NAME, sizeof(groupID_NAME), "[%d] %s", groupID, realGroupname);
     int initSize;
-    int chatsSize = initSize = sizeof(SHOWGROUPCHAT) + strlen(realGroupname) + 1;
+    int chatsSize = initSize = sizeof(SHOWGROUPCHAT) + strlen(groupID_NAME) + 1;
     char* chats = malloc(chatsSize);
     strcpy(chats, SHOWGROUPCHAT);
-    strcat(strcat(strcpy(chats, SHOWGROUPCHAT), realGroupname), ":");
+    strcat(strcat(strcpy(chats, SHOWGROUPCHAT), groupID_NAME), ":");
 
     pthread_mutex_lock(&g_users_mutex);
     pthread_mutex_lock(&g_groups_mutex);
@@ -1956,6 +1958,11 @@ char* showgroupchatCommand(const char* groupname, int* client_id)
         const unsigned char* username = sqlite3_column_text(stmt, 1);
         const unsigned char* message = sqlite3_column_text(stmt, 2);
         const unsigned char* created_at = sqlite3_column_text(stmt, 3);
+
+        if (id == *client_id)
+        {
+            username = "You";
+        }
 
         char chat[BUFFER_SIZE];
         snprintf(chat, sizeof(chat), "\n(%s) [%d] %s | %s", created_at, id, username, message);

@@ -145,7 +145,8 @@
 #define GROUPS_ARGC 0
 #define GROUPS "\nJOINED GROUPS:"
 #define GROUPS_FAILED "NO GROUPS AVAILABLE"
-#define GROUPS_SUFFIX "\nUse CREATEGROUP <groupname> to create a group with the given groupname."
+#define GROUPS_SUFFIX "\nUse CREATEGROUP <groupname> to create a group with the given groupname."\
+                        "\nUse SHOWGROUPCHAT <group_id/groupname> to see a joined group's chat."
 
 #define GROUPCHAT_COMMAND "GROUPCHAT"
 #define GROUPCHAT_ARGC 2
