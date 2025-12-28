@@ -16,7 +16,23 @@
 
 /* ------------------------------------------------------------------ */
 
-const char* tokensToMessage(char** tokens, int startToken, int* tokenCount)
+volatile sig_atomic_t running = 1;
+int sd = 0;
+
+void stop_handler(int sig)
+{
+    printf("[server] Oprim serverul...\n");
+    running = 0;
+    if (sd > 0)
+    {
+        shutdown(sd, SHUT_RDWR);
+        close(sd);
+    }
+}
+
+/* ------------------------------------------------------------------ */
+
+char* tokensToMessage(char** tokens, int startToken, int* tokenCount)
 {
     char* message = malloc(1);
     int messageSize = 1;
@@ -161,13 +177,13 @@ void initDatabase()
 char** parseCommand(char* command, int* tokenCount)
 {
     *tokenCount = 0;
-    char** tokens = malloc(sizeof(char*));
     char* save_ptr = command;
     char* token = strtok_r(save_ptr, " ", &save_ptr);
 
     if (token == NULL)
         return NULL;
-    
+
+    char** tokens = malloc(sizeof(char*));
     int length = strlen(token);
     tokens[*tokenCount] = malloc(length + 1);
     strcpy(tokens[(*tokenCount)++], token);
@@ -326,8 +342,10 @@ char* handleCommand(char** tokens, int* tokenCount, int* client_id)
         if (*tokenCount >= POST_ARGC)
         {
             const char* privacy = tokens[1];
-            const char* message = tokensToMessage(tokens, POST_ARGC, tokenCount);
-            return postCommand(privacy, message, client_id);
+            char* message = tokensToMessage(tokens, POST_ARGC, tokenCount);
+            char* response = postCommand(privacy, message, client_id);
+            free(message);
+            return response;
         }
         else if (*tokenCount == 0)
             RET_DYN(NO_ARGUMENTS);
@@ -346,8 +364,10 @@ char* handleCommand(char** tokens, int* tokenCount, int* client_id)
         if (*tokenCount >= CHAT_ARGC)
         {
             const char* username = tokens[1];
-            const char* message = tokensToMessage(tokens, CHAT_ARGC, tokenCount);
-            return chatCommand(username, message, client_id);
+            char* message = tokensToMessage(tokens, CHAT_ARGC, tokenCount);
+            char* response = chatCommand(username, message, client_id);
+            free(message);
+            return response;
         }
         else if (*tokenCount == 0)
             RET_DYN(NO_ARGUMENTS);
@@ -451,8 +471,10 @@ char* handleCommand(char** tokens, int* tokenCount, int* client_id)
         if (*tokenCount >= GROUPCHAT_ARGC)
         {
             const char* groupname = tokens[1];
-            const char* message = tokensToMessage(tokens, GROUPCHAT_ARGC, tokenCount);
-            return groupchatCommand(groupname, message, client_id);
+            char* message = tokensToMessage(tokens, GROUPCHAT_ARGC, tokenCount);
+            char* response = groupchatCommand(groupname, message, client_id);
+            free(message);
+            return response;
         }
         else if (*tokenCount == 0)
             RET_DYN(NO_ARGUMENTS);
@@ -531,6 +553,7 @@ void* handleClient(void* arg)
     char* bufferIn = NULL;
 
     int tokenCount;
+    int initTokenCount;
     char** tokens = NULL;
 
     char* bufferOut = NULL;
@@ -565,12 +588,13 @@ void* handleClient(void* arg)
             free(bufferIn);
             bufferIn = NULL;
         }
-
+        
+        initTokenCount = tokenCount; //fac copie pt ca scad tokencount cu 1 sa am nr argumente in handlecommand
         bufferOut = handleCommand(tokens, &tokenCount, &client_id);
         //printf("[d_server] after handleCommand()\n");
         if (tokens != NULL)
         {
-            freeTokens(tokens, tokenCount);
+            freeTokens(tokens, initTokenCount);
             tokens = NULL;
         }
 
@@ -604,7 +628,7 @@ void* handleClient(void* arg)
     
     if (tokens != NULL)
     {
-        freeTokens(tokens, tokenCount);
+        freeTokens(tokens, initTokenCount);
         tokens = NULL;
     }
 
@@ -620,7 +644,6 @@ void* handleClient(void* arg)
 int main(void)
 {
     struct sockaddr_in server, client;
-    int sd;
     const int optval = 1;
 
     if ((sd = socket(AF_INET, SOCK_STREAM, 0)) < 0)
@@ -644,18 +667,25 @@ int main(void)
     if (signal(SIGPIPE, SIG_IGN) == SIG_ERR)
         handleError("signal()");
 
+    if (signal(SIGINT, stop_handler) == SIG_ERR)
+        handleError("signal()");
+
     printf("[server] Serverul este pornit!\n");
 
     initDatabase();
 
-    while (1)
+    while (running)
     {
         pthread_t thId;
 
         int cl;
         socklen_t length = sizeof(client);
         if ((cl = accept(sd, (struct sockaddr*) &client, &length)) < 0)
-            handleError("accept()");
+        {
+            if (!running) break;
+            perror("accept()");
+            continue;
+        }
         
         int* pointercl = malloc(sizeof(int));
         *pointercl = cl;
@@ -666,4 +696,7 @@ int main(void)
         pthread_create(&thId, &attr, handleClient, pointercl);
         pthread_attr_destroy(&attr);
     }
+
+    sqlite3_close(db);
+    sqlite3_shutdown();
 }
